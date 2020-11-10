@@ -37,7 +37,8 @@ class DataSetWrapper(object):
             )
         else:
             train_dataset = datasets.STL10(
-                "./data", split="train+unlabeled", download=True
+                "./data", split="train+unlabeled", download=True,
+                transform = SimCLRDataTransform(transforms.Compose([transforms.ToTensor()]))
             )
 
         train_loader, valid_loader = self.get_train_validation_data_loaders(

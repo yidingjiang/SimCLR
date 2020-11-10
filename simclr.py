@@ -47,12 +47,17 @@ class SimCLRAdv(object):
 
     def _get_device(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        if "device" in self.config:
+            device = self.config["device"]
         print("Running on:", device)
         return device
 
     def _adv_step(self, model, augmentor, xis, xjs, n_iter):
-        shape = augmentor.noise_shapes(self.config['dataset']['input_shape'][0])
-        noise = [self.normal_dist.sample([self.config['batch_size']] + s) for s in shape]
+        shape = augmentor.noise_shapes(eval(self.config['dataset']['input_shape'])[0])
+        print(shape)
+        print(self.config['batch_size'])
+        print(self.device)
+        noise = [torch.squeeze(self.normal_dist.sample([self.config['batch_size']] + s), -1).to(self.device) for s in shape]
         xis = augmentor(xis, noise)
 
         ris, zis = model(xis)  # [N,C]
@@ -72,7 +77,7 @@ class SimCLRAdv(object):
         model = ResNetSimCLR(**self.config["model"]).to(self.device)
         model = self._load_pre_trained_weights(model)
 
-        augmentor = LpAugmentor()
+        augmentor = LpAugmentor().to(self.device)
         augmentor_optimizer = torch.optim.Adam(augmentor.parameters(), 3e-4)
         augmentor_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             augmentor_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1

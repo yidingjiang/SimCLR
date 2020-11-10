@@ -8,10 +8,11 @@ def main():
     config = yaml.load(open("config.yaml", "r"), Loader=yaml.FullLoader)
     dataset = DataSetWrapper(config['batch_size'], **config['dataset'])
 
-    if config['use_adv_aug']:
-        simclr = SimCLR(dataset, config)
-    else:
+    if config["use_adv_aug"]:
+        print("Use Adversarial Augmentation.")
         simclr = SimCLRAdv(dataset, config)
+    else:
+        simclr = SimCLR(dataset, config)
     simclr.train()
 
 
