@@ -53,10 +53,20 @@ class SimCLRAdv(object):
         return device
 
     def _adv_step(self, model, augmentor, xis, xjs, n_iter):
-        shape = augmentor.noise_shapes(eval(self.config['dataset']['input_shape'])[0])
-        noise = [torch.squeeze(self.normal_dist.sample([self.config['batch_size']] + s), -1).to(self.device) for s in shape]
+        shape = augmentor.noise_shapes(eval(self.config["dataset"]["input_shape"])[0])
+        noise = [
+            torch.squeeze(
+                self.normal_dist.sample([self.config["batch_size"]] + s), -1
+            ).to(self.device)
+            for s in shape
+        ]
         xis = augmentor(xis, noise)
-        noise = [torch.squeeze(self.normal_dist.sample([self.config['batch_size']] + s), -1).to(self.device) for s in shape]
+        noise = [
+            torch.squeeze(
+                self.normal_dist.sample([self.config["batch_size"]] + s), -1
+            ).to(self.device)
+            for s in shape
+        ]
         xjs = augmentor(xjs, noise)
 
         ris, zis = model(xis)  # [N,C]
@@ -77,13 +87,15 @@ class SimCLRAdv(object):
         model = self._load_pre_trained_weights(model)
 
         augmentor = LpAugmentor().to(self.device)
-        augmentor_optimizer = torch.optim.Adam(augmentor.parameters(), 3e-4)
-        augmentor_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            augmentor_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
-        )
+        # augmentor_optimizer = torch.optim.Adam(augmentor.parameters(), 3e-4)
+        # augmentor_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     augmentor_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
+        # )
 
         optimizer = torch.optim.Adam(
-            model.parameters(), 3e-4, weight_decay=eval(self.config["weight_decay"])
+            list(model.parameters()) + list(augmentor.parameters()),
+            3e-4,
+            weight_decay=eval(self.config["weight_decay"]),
         )
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -123,13 +135,16 @@ class SimCLRAdv(object):
                 else:
                     loss.backward()
 
+                for p in augmentor.parameters():
+                    p.grad *= -1.0
+
                 optimizer.step()
 
                 # Update augmentor
-                augmentor_optimizer.zero_grad()
-                loss = -self._adv_step(model, augmentor, xis, xjs, n_iter)
-                loss.backward()
-                augmentor_optimizer.step()
+                # augmentor_optimizer.zero_grad()
+                # loss = -self._adv_step(model, augmentor, xis, xjs, n_iter)
+                # loss.backward()
+                # augmentor_optimizer.step()
 
                 n_iter += 1
 
@@ -190,13 +205,14 @@ class SimCLRAdv(object):
 
 
 class SimCLR(object):
-
     def __init__(self, dataset, config):
         self.config = config
         self.device = self._get_device()
         self.writer = SummaryWriter()
         self.dataset = dataset
-        self.nt_xent_criterion = NTXentLoss(self.device, config['batch_size'], **config['loss'])
+        self.nt_xent_criterion = NTXentLoss(
+            self.device, config["batch_size"], **config["loss"]
+        )
 
     def _get_device(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -227,17 +243,20 @@ class SimCLR(object):
         model = ResNetSimCLR(**self.config["model"]).to(self.device)
         model = self._load_pre_trained_weights(model)
 
-        optimizer = torch.optim.Adam(model.parameters(), 3e-4, weight_decay=eval(self.config['weight_decay']))
+        optimizer = torch.optim.Adam(
+            model.parameters(), 3e-4, weight_decay=eval(self.config["weight_decay"])
+        )
 
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader), eta_min=0,
-                                                               last_epoch=-1)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
+        )
 
-        if apex_support and self.config['fp16_precision']:
-            model, optimizer = amp.initialize(model, optimizer,
-                                              opt_level='O2',
-                                              keep_batchnorm_fp32=True)
+        if apex_support and self.config["fp16_precision"]:
+            model, optimizer = amp.initialize(
+                model, optimizer, opt_level="O2", keep_batchnorm_fp32=True
+            )
 
-        model_checkpoints_folder = os.path.join(self.writer.log_dir, 'checkpoints')
+        model_checkpoints_folder = os.path.join(self.writer.log_dir, "checkpoints")
 
         # save config file
         _save_config_file(model_checkpoints_folder)
@@ -246,7 +265,7 @@ class SimCLR(object):
         valid_n_iter = 0
         best_valid_loss = np.inf
 
-        for epoch_counter in range(self.config['epochs']):
+        for epoch_counter in range(self.config["epochs"]):
             print("epoch: ", epoch_counter)
             for (xis, xjs), _ in train_loader:
                 optimizer.zero_grad()
@@ -256,10 +275,10 @@ class SimCLR(object):
 
                 loss = self._step(model, xis, xjs, n_iter)
 
-                if n_iter % self.config['log_every_n_steps'] == 0:
-                    self.writer.add_scalar('train_loss', loss, global_step=n_iter)
+                if n_iter % self.config["log_every_n_steps"] == 0:
+                    self.writer.add_scalar("train_loss", loss, global_step=n_iter)
 
-                if apex_support and self.config['fp16_precision']:
+                if apex_support and self.config["fp16_precision"]:
                     with amp.scale_loss(loss, optimizer) as scaled_loss:
                         scaled_loss.backward()
                 else:
@@ -269,26 +288,35 @@ class SimCLR(object):
                 n_iter += 1
 
             # validate the model if requested
-            if epoch_counter % self.config['eval_every_n_epochs'] == 0:
+            if epoch_counter % self.config["eval_every_n_epochs"] == 0:
                 valid_loss = self._validate(model, valid_loader)
                 if valid_loss < best_valid_loss:
                     # save the model weights
                     best_valid_loss = valid_loss
-                    torch.save(model.state_dict(), os.path.join(model_checkpoints_folder, 'model.pth'))
+                    torch.save(
+                        model.state_dict(),
+                        os.path.join(model_checkpoints_folder, "model.pth"),
+                    )
                 print("validation loss:", valid_loss)
 
-                self.writer.add_scalar('validation_loss', valid_loss, global_step=valid_n_iter)
+                self.writer.add_scalar(
+                    "validation_loss", valid_loss, global_step=valid_n_iter
+                )
                 valid_n_iter += 1
 
             # warmup for the first 10 epochs
             if epoch_counter >= 10:
                 scheduler.step()
-            self.writer.add_scalar('cosine_lr_decay', scheduler.get_lr()[0], global_step=n_iter)
+            self.writer.add_scalar(
+                "cosine_lr_decay", scheduler.get_lr()[0], global_step=n_iter
+            )
 
     def _load_pre_trained_weights(self, model):
         try:
-            checkpoints_folder = os.path.join('./runs', self.config['fine_tune_from'], 'checkpoints')
-            state_dict = torch.load(os.path.join(checkpoints_folder, 'model.pth'))
+            checkpoints_folder = os.path.join(
+                "./runs", self.config["fine_tune_from"], "checkpoints"
+            )
+            state_dict = torch.load(os.path.join(checkpoints_folder, "model.pth"))
             model.load_state_dict(state_dict)
             print("Loaded pre-trained model with success.")
         except FileNotFoundError:
