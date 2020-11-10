@@ -56,6 +56,8 @@ class SimCLRAdv(object):
         shape = augmentor.noise_shapes(eval(self.config['dataset']['input_shape'])[0])
         noise = [torch.squeeze(self.normal_dist.sample([self.config['batch_size']] + s), -1).to(self.device) for s in shape]
         xis = augmentor(xis, noise)
+        noise = [torch.squeeze(self.normal_dist.sample([self.config['batch_size']] + s), -1).to(self.device) for s in shape]
+        xjs = augmentor(xjs, noise)
 
         ris, zis = model(xis)  # [N,C]
         rjs, zjs = model(xjs)  # [N,C]
