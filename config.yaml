@@ -5,8 +5,8 @@ fine_tune_from: None
 log_every_n_steps: 50
 weight_decay: 10e-6
 fp16_precision: False
-use_adv_aug: True
-device: cuda
+use_adv_aug: False
+device: cuda:2
 
 model:
   out_dim: 256
@@ -17,7 +17,7 @@ dataset:
   input_shape: (96,96,3)
   num_workers: 0
   valid_size: 0.05
-  use_augmentation: False
+  use_augmentation: True
 
 loss:
   temperature: 0.5

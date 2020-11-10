@@ -25,5 +25,5 @@ class LpAugmentor(nn.Module):
         h3 = F.relu(self.l_3(torch.cat((h2, noise[2]), 1)))
         h4 = F.relu(self.l_4(torch.cat((h3, noise[3]), 1)))
         norm = h4.norm(p=self.p, dim=(1, 2, 3), keepdim=True).detach()
-        out = x + h4.div(norm)
-        return torch.clip(out, 0., 1.) if self.clip else out
+        out = x + 0.05*96*96*3*h4.div(norm)
+        return torch.clamp(out, 0., 1.) if self.clip else out

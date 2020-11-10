@@ -54,9 +54,6 @@ class SimCLRAdv(object):
 
     def _adv_step(self, model, augmentor, xis, xjs, n_iter):
         shape = augmentor.noise_shapes(eval(self.config['dataset']['input_shape'])[0])
-        print(shape)
-        print(self.config['batch_size'])
-        print(self.device)
         noise = [torch.squeeze(self.normal_dist.sample([self.config['batch_size']] + s), -1).to(self.device) for s in shape]
         xis = augmentor(xis, noise)
 
@@ -106,6 +103,7 @@ class SimCLRAdv(object):
         best_valid_loss = np.inf
 
         for epoch_counter in range(self.config["epochs"]):
+            print("====== Epoch {} =======".format(epoch_counter))
             for (xis, xjs), _ in train_loader:
                 optimizer.zero_grad()
 
@@ -143,7 +141,7 @@ class SimCLRAdv(object):
                         model.state_dict(),
                         os.path.join(model_checkpoints_folder, "model.pth"),
                     )
-
+                print("validation loss: ", valid_loss)
                 self.writer.add_scalar(
                     "validation_loss", valid_loss, global_step=valid_n_iter
                 )
@@ -199,7 +197,9 @@ class SimCLR(object):
         self.nt_xent_criterion = NTXentLoss(self.device, config['batch_size'], **config['loss'])
 
     def _get_device(self):
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if "device" in self.config:
+            device = self.config["device"]
         print("Running on:", device)
         return device
 
@@ -245,6 +245,7 @@ class SimCLR(object):
         best_valid_loss = np.inf
 
         for epoch_counter in range(self.config['epochs']):
+            print("epoch: ", epoch_counter)
             for (xis, xjs), _ in train_loader:
                 optimizer.zero_grad()
 
@@ -272,6 +273,7 @@ class SimCLR(object):
                     # save the model weights
                     best_valid_loss = valid_loss
                     torch.save(model.state_dict(), os.path.join(model_checkpoints_folder, 'model.pth'))
+                print("validation loss:", valid_loss)
 
                 self.writer.add_scalar('validation_loss', valid_loss, global_step=valid_n_iter)
                 valid_n_iter += 1
