@@ -7,7 +7,7 @@ import torchvision.models as models
 
 
 class IcmAugmentor(nn.Module):
-    def __init__(self, num_mech=5, num_app=1, max_app_parallel=4, clip=True):
+    def __init__(self, num_mech, num_app=1, max_app_parallel=4, clip=True):
         super(IcmAugmentor, self).__init__()
         self.num_mech = num_mech
         self.num_app = num_app
@@ -56,7 +56,7 @@ class Mechanism(nn.Module):
         shape = x.size()
         h = self.transform(x)
         norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
-        out = x + self.magnitude * np.prod(shape[1:]) * h.div(norm)
+        out = x + self.magnitude * np.prod(shape[1:]) * h.div(norm).detach()
         return torch.clamp(out, 0., 1.) if self.clip else out
 
 
