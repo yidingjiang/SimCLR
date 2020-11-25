@@ -1,5 +1,6 @@
 from simclr import SimCLR
 from simclr import SimCLRAdv
+from simclr_icm import IcmAugmentor
 import yaml
 from data_aug.dataset_wrapper import DataSetWrapper
 
@@ -10,7 +11,8 @@ def main():
 
     if config["use_adv_aug"]:
         print("Use Adversarial Augmentation.")
-        simclr = SimCLRAdv(dataset, config)
+        # simclr = SimCLRAdv(dataset, config)
+        simclr = IcmAugmentor(dataset, config)
     else:
         simclr = SimCLR(dataset, config)
     simclr.train()
