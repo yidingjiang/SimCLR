@@ -75,11 +75,12 @@ class IcmSimCLR(object):
     def _disc_step(self, augmentor, discriminator, xis, xjs, n_iter):
         xis_o, xjs_o = xis, xjs
         xis, xis_mech_label = augmentor(xis)
-        xis_prediction = discriminator(xis, xis_o)
+        xis_prediction = discriminator((xis, xis_o))
         xjs, xjs_mech_label = augmentor(xjs)
-        xjs_prediction = discriminator(xjs, xjs_o)
-        disc_loss_i = self.dis_criterion(xis_prediction, torch.Tensor(xis_mech_label))
-        disc_loss_j = self.dis_criterion(xjs_prediction, torch.Tensor(xjs_mech_label))
+        xjs_prediction = discriminator((xjs, xjs_o))
+        xis_mech_label, xjs_mech_label = np.int32(xis_mech_label[0]), np.int32(xjs_mech_label[0])
+        disc_loss_i = self.dis_criterion(xis_prediction, torch.Tensor(xis_mech_label).long().to(self.device))
+        disc_loss_j = self.dis_criterion(xjs_prediction, torch.Tensor(xjs_mech_label).long().to(self.device))
         return (disc_loss_i + disc_loss_j) / 2.0
 
     def train(self):
@@ -90,7 +91,7 @@ class IcmSimCLR(object):
         model = self._load_pre_trained_weights(model)
 
         augmentor = IcmAugmentor(num_mech=5).to(self.device)
-        discriminator = Discriminator(num_mech=5)
+        discriminator = Discriminator(num_mech=5).to(self.device)
 
         optimizer = torch.optim.Adam(
             list(model.parameters()),
@@ -100,7 +101,8 @@ class IcmSimCLR(object):
 
         aug_optimizer = torch.optim.Adam(
             list(augmentor.parameters()),
-            3e-4,
+            3e-4, 
+            weight_decay=eval(self.config["weight_decay"]),
         )
 
         disc_optimizer = torch.optim.Adam(
@@ -135,23 +137,24 @@ class IcmSimCLR(object):
         for epoch_counter in range(self.config["epochs"]):
             print("====== Epoch {} =======".format(epoch_counter))
             for (xis, xjs), _ in train_loader:
-                optimizer.zero_grad()
-
                 xis = xis.to(self.device)
                 xjs = xjs.to(self.device)
 
-                loss = self._adv_step(model, augmentor, xis, xjs, n_iter)
+                if n_iter > 100:
+                    optimizer.zero_grad()
 
-                if n_iter % self.config["log_every_n_steps"] == 0:
-                    self.writer.add_scalar("train_loss", loss, global_step=n_iter)
+                    loss = self._adv_step(model, augmentor, xis, xjs, n_iter)
 
-                if apex_support and self.config["fp16_precision"]:
-                    with amp.scale_loss(loss, optimizer) as scaled_loss:
-                        scaled_loss.backward()
-                else:
-                    loss.backward()
+                    if n_iter % self.config["log_every_n_steps"] == 0:
+                        self.writer.add_scalar("train_loss", loss, global_step=n_iter)
 
-                optimizer.step()
+                    if apex_support and self.config["fp16_precision"]:
+                        with amp.scale_loss(loss, optimizer) as scaled_loss:
+                            scaled_loss.backward()
+                    else:
+                        loss.backward()
+
+                    optimizer.step()
 
                 # Update augmentor
                 aug_optimizer.zero_grad()
@@ -159,7 +162,7 @@ class IcmSimCLR(object):
                     model, augmentor, xis, xjs, n_iter
                 )
                 loss += self.disc_weight * self._disc_step(
-                    model, augmentor, xis, xjs, n_iter
+                    augmentor, discriminator, xis, xjs, n_iter
                 )
                 loss.backward()
                 aug_optimizer.step()
@@ -167,10 +170,12 @@ class IcmSimCLR(object):
                 # Update Discriminator
                 disc_optimizer.zero_grad()
                 loss = self._disc_step(
-                    model, augmentor, xis, xjs, n_iter
+                    augmentor, discriminator, xis, xjs, n_iter
                 )
                 loss.backward()
                 disc_optimizer.step()
+                if n_iter % 50 == 0:
+                    print("step{}    D loss: {:6f}".format(n_iter, loss))
 
                 n_iter += 1
 

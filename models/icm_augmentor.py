@@ -13,7 +13,9 @@ class IcmAugmentor(nn.Module):
         self.num_app = num_app
         self.max_app_parallel = max_app_parallel
         self.clip = clip
-        self.mechanisms = (Mechanism() for _ in range(self.num_mech))
+        self.mechanisms = nn.ModuleList()
+        for _ in range(num_mech):
+          self.mechanisms.append(Mechanism())
         self.selected_mechanism = []
 
     def forward(self, x):
@@ -21,18 +23,16 @@ class IcmAugmentor(nn.Module):
         num_per_mech = x.size()[0] // self.max_app_parallel
         mech_label = []
         mech_idx = np.arange(self.num_mech)
-
         for _ in range(self.num_app):
             # sample which mechanisms to apply and create label
             chosen_idx = np.random.choice(mech_idx, self.max_app_parallel, True)
             chosen_mech = [self.mechanisms[i] for i in chosen_idx]
             mech_label.append(np.concatenate([[i] * num_per_mech for i in chosen_idx]))
             # split and apply
-            split = torch.split(out, self.max_app_parallel)
+            split = torch.split(out, num_per_mech)
             split = [m(s) for s, m in zip(split, chosen_mech)]
             # merge and clamp
             out = torch.cat(split)
-
         return out, mech_label
 
 
@@ -47,7 +47,7 @@ class Mechanism(nn.Module):
             nn.ReLU(),
             nn.Conv2d(64, 64, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.ConvTranspose2d(64, 64, kernel_size=6, stride=2),
+            nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2),
             nn.ReLU(),
             nn.ConvTranspose2d(64, 3, kernel_size=6, stride=2),
         )
@@ -57,7 +57,7 @@ class Mechanism(nn.Module):
         h = self.transform(x)
         norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
         out = x + self.magnitude * np.prod(shape[1:]) * h.div(norm).detach()
-        return torch.clamp(out, 0., 1.) if self.clip else out
+        return torch.clamp(out, 0., 1.)
 
 
 class Discriminator(nn.Module):
@@ -67,19 +67,21 @@ class Discriminator(nn.Module):
         self.num_mech = num_mech
         self.h_dim = 32 * (input_dim // (2**3))**2
         self.model = nn.Sequential(
-            nn.Conv2d(6, 64, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(6, 32, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(128, 32, kernel_size=3, stride=1, padding=1),
-            nn.Flatten(),
-            nn.Linear(self.h_dim, 256),
-            nn.ReLU(),
-            nn.Linear(256, num_mech)
         )
+        self.flatten = nn.Flatten()
+        self.f1 = nn.Linear(128, 256)
+        self.f2 = nn.Linear(256, num_mech)
 
-    def forward(self, x, x_t):
-        x_cat = torch.cat([x, x_t], dim=1)
-        return self.model(x_cat)
+    def forward(self, x):
+        x_cat = torch.cat([x[0], x[1]], dim=1)
+        out = self.model(x_cat)
+        out = torch.mean(out, (2, 3))
+        out = F.relu(self.f1(out))
+        out = self.f2(out)
+        return out
