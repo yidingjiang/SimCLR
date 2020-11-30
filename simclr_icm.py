@@ -140,7 +140,7 @@ class IcmSimCLR(object):
                 xis = xis.to(self.device)
                 xjs = xjs.to(self.device)
 
-                if n_iter > 100:
+                if n_iter % 50 == 0:
                     optimizer.zero_grad()
 
                     loss = self._adv_step(model, augmentor, xis, xjs, n_iter)
@@ -174,7 +174,7 @@ class IcmSimCLR(object):
                 )
                 loss.backward()
                 disc_optimizer.step()
-                if n_iter % 50 == 0:
+                if n_iter % 100 == 0:
                     print("step{}    D loss: {:6f}".format(n_iter, loss))
 
                 n_iter += 1
