@@ -2,6 +2,8 @@ import torch
 from models.resnet_simclr import ResNetSimCLR
 from models.icm_augmentor import IcmAugmentor
 from models.icm_augmentor import Discriminator
+from models.icm_augmentor import IcmAugmentorv2
+from models.icm_augmentor import Discriminatorv2
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 import torch.distributions as tdist
@@ -55,7 +57,7 @@ class IcmSimCLR(object):
         print("Running on:", device)
         return device
 
-    def _adv_step(self, model, augmentor, xis, xjs, n_iter):
+    def _step(self, model, augmentor, xis, xjs, n_iter):
         # shape = augmentor.noise_shapes(eval(self.config["dataset"]["input_shape"])[0])
         xis_o, xjs_o = xis, xjs
 
@@ -78,20 +80,38 @@ class IcmSimCLR(object):
         xis_prediction = discriminator((xis, xis_o))
         xjs, xjs_mech_label = augmentor(xjs)
         xjs_prediction = discriminator((xjs, xjs_o))
-        xis_mech_label, xjs_mech_label = np.int32(xis_mech_label[0]), np.int32(xjs_mech_label[0])
-        disc_loss_i = self.dis_criterion(xis_prediction, torch.Tensor(xis_mech_label).long().to(self.device))
-        disc_loss_j = self.dis_criterion(xjs_prediction, torch.Tensor(xjs_mech_label).long().to(self.device))
-        return (disc_loss_i + disc_loss_j) / 2.0
+        xis_mech_label, xjs_mech_label = np.int32(xis_mech_label[0]), np.int32(
+            xjs_mech_label[0]
+        )
+        disc_loss_i = self.dis_criterion(
+            xis_prediction, torch.Tensor(xis_mech_label).long().to(self.device)
+        )
+        disc_loss_j = self.dis_criterion(
+            xjs_prediction, torch.Tensor(xjs_mech_label).long().to(self.device)
+        )
+        total_loss = (disc_loss_i + disc_loss_j) / 2.0
+
+        if n_iter % 100 == 0:
+            print("step{}    D loss: {:6f}".format(n_iter, total_loss))
+
+        return total_loss
+
+    def _build_model(self):
+        model = ResNetSimCLR(**self.config["model"]).to(self.device)
+        model = self._load_pre_trained_weights(model)
+
+        augmentor = IcmAugmentor(num_mech=self.config["num_mechanisms"]).to(self.device)
+        augmentor = self._load_pre_trained_weights(augmentor, "augmentor.pth")
+
+        discriminator = Discriminator(num_mech=self.config["num_mechanisms"]).to(self.device)
+        discriminator = self._load_pre_trained_weights(discriminator, "discriminator.pth")
+        return model, augmentor, discriminator
 
     def train(self):
 
         train_loader, valid_loader = self.dataset.get_data_loaders()
 
-        model = ResNetSimCLR(**self.config["model"]).to(self.device)
-        model = self._load_pre_trained_weights(model)
-
-        augmentor = IcmAugmentor(num_mech=5).to(self.device)
-        discriminator = Discriminator(num_mech=5).to(self.device)
+        model, augmentor, discriminator = self._build_model()
 
         optimizer = torch.optim.Adam(
             list(model.parameters()),
@@ -101,7 +121,7 @@ class IcmSimCLR(object):
 
         aug_optimizer = torch.optim.Adam(
             list(augmentor.parameters()),
-            3e-4, 
+            3e-4,
             weight_decay=eval(self.config["weight_decay"]),
         )
 
@@ -140,10 +160,10 @@ class IcmSimCLR(object):
                 xis = xis.to(self.device)
                 xjs = xjs.to(self.device)
 
-                if n_iter % 50 == 0:
+                if n_iter % self.config["simclr_train_interval"] == 0:
                     optimizer.zero_grad()
 
-                    loss = self._adv_step(model, augmentor, xis, xjs, n_iter)
+                    loss = self._step(model, augmentor, xis, xjs, n_iter)
 
                     if n_iter % self.config["log_every_n_steps"] == 0:
                         self.writer.add_scalar("train_loss", loss, global_step=n_iter)
@@ -158,9 +178,7 @@ class IcmSimCLR(object):
 
                 # Update augmentor
                 aug_optimizer.zero_grad()
-                loss = -self._adv_step(
-                    model, augmentor, xis, xjs, n_iter
-                )
+                loss = -self._step(model, augmentor, xis, xjs, n_iter)
                 loss += self.disc_weight * self._disc_step(
                     augmentor, discriminator, xis, xjs, n_iter
                 )
@@ -169,13 +187,9 @@ class IcmSimCLR(object):
 
                 # Update Discriminator
                 disc_optimizer.zero_grad()
-                loss = self._disc_step(
-                    augmentor, discriminator, xis, xjs, n_iter
-                )
+                loss = self._disc_step(augmentor, discriminator, xis, xjs, n_iter)
                 loss.backward()
                 disc_optimizer.step()
-                if n_iter % 100 == 0:
-                    print("step{}    D loss: {:6f}".format(n_iter, loss))
 
                 n_iter += 1
 
@@ -213,14 +227,14 @@ class IcmSimCLR(object):
                 "cosine_lr_decay", scheduler.get_lr()[0], global_step=n_iter
             )
 
-    def _load_pre_trained_weights(self, model):
+    def _load_pre_trained_weights(self, model, model_path="model.pth"):
         try:
             checkpoints_folder = os.path.join(
                 "./runs", self.config["fine_tune_from"], "checkpoints"
             )
-            state_dict = torch.load(os.path.join(checkpoints_folder, "model.pth"))
+            state_dict = torch.load(os.path.join(checkpoints_folder, model_path))
             model.load_state_dict(state_dict)
-            print("Loaded pre-trained model with success.")
+            print("Loaded pre-trained model from with success.".format(model_path))
         except FileNotFoundError:
             print("Pre-trained weights not found. Training from scratch.")
 
@@ -238,9 +252,60 @@ class IcmSimCLR(object):
                 xis = xis.to(self.device)
                 xjs = xjs.to(self.device)
 
-                loss = self._adv_step(model, augmentor, xis, xjs, counter)
+                loss = self._step(model, augmentor, xis, xjs, counter)
                 valid_loss += loss.item()
                 counter += 1
             valid_loss /= counter
         model.train()
         return valid_loss
+
+
+class IcmSimCLRv2(IcmSimCLR):
+
+    def __init__(self, dataset, config):
+         super(IcmSimCLRv2, self).__init__(dataset, config)
+
+    def _build_model(self):
+        model = ResNetSimCLR(**self.config["model"]).to(self.device)
+        model = self._load_pre_trained_weights(model)
+
+        augmentor = IcmAugmentorv2(num_mech=self.config["num_mechanisms"]).to(self.device)
+        augmentor = self._load_pre_trained_weights(augmentor, "augmentor.pth")
+
+        discriminator = Discriminatorv2(num_mech=self.config["num_mechanisms"]).to(self.device)
+        discriminator = self._load_pre_trained_weights(discriminator, "discriminator.pth")
+        return model, augmentor, discriminator
+
+    def _disc_step(self, augmentor, discriminator, xis, xjs, n_iter):
+        xis_o, xjs_o = xis, xjs
+
+        xis, xis_mech_label = augmentor(xis)
+        xis_pred_id, xis_pred_val = discriminator((xis, xis_o))
+        xjs, xjs_mech_label = augmentor(xjs)
+        xjs_pred_id, xjs_pred_val = discriminator((xjs, xjs_o))
+
+        xis_true_id = np.int32(xis_mech_label['id'][0])
+        xjs_true_id = np.int32(xjs_mech_label['id'][0])
+        xis_true_val = np.float32(xis_mech_label['value'][0])
+        xjs_true_val = np.float32(xjs_mech_label['value'][0])
+
+        id_loss_i = self.dis_criterion(
+            xis_pred_id, torch.Tensor(xis_true_id).long().to(self.device)
+        )
+        id_loss_j = self.dis_criterion(
+            xjs_pred_id, torch.Tensor(xjs_true_id).long().to(self.device)
+        )
+        total_id_loss = (id_loss_i + id_loss_j) / 2.
+
+        val_loss_i = torch.mean(
+            (xis_pred_val - torch.Tensor(xis_true_val).float().to(self.device))**2
+        )
+        val_loss_j = torch.mean(
+            (xjs_pred_val - torch.Tensor(xjs_true_val).float().to(self.device))**2
+        )
+        total_val_loss = (val_loss_i + val_loss_j) / 2.
+
+        if n_iter % 100 == 0:
+            print("step{}    id loss: {:6f}    val_loss: {:6f}".format(n_iter, total_id_loss, total_val_loss))
+
+        return total_id_loss + total_val_loss

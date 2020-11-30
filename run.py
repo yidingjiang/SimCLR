@@ -9,12 +9,15 @@ def main():
     config = yaml.load(open("config.yaml", "r"), Loader=yaml.FullLoader)
     dataset = DataSetWrapper(config['batch_size'], **config['dataset'])
 
-    if config["use_adv_aug"]:
+    if config["exp_type"] == "adversarial":
         print("Use Adversarial Augmentation.")
-        # simclr = SimCLRAdv(dataset, config)
+        simclr = SimCLRAdv(dataset, config)
+    elif config["exp_type"] == "icm_adversarial":
         simclr = IcmSimCLR(dataset, config)
-    else:
+    elif config["exp_type"] == "normal":
         simclr = SimCLR(dataset, config)
+    else:
+        raise ValueError("Unrecognized experiment type: {}".format(config["exp_type"]))
     simclr.train()
 
 

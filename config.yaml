@@ -5,8 +5,10 @@ fine_tune_from: None
 log_every_n_steps: 50
 weight_decay: 10e-6
 fp16_precision: False
-use_adv_aug: True
+exp_type: icm_adversarial
+num_mechanisms: 5
 device: cuda:1
+simclr_train_interval: 50
 
 model:
   out_dim: 256
