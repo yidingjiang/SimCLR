@@ -5,7 +5,8 @@ fine_tune_from: None
 log_every_n_steps: 50
 weight_decay: 10e-6
 fp16_precision: False
-exp_type: icm_adversarial
+exp_type: adversarial
+augmentor_type: style_transfer
 num_mechanisms: 30
 device: cuda
 simclr_train_interval: 5

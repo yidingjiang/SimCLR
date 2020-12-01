@@ -1,6 +1,7 @@
 import torch
 from models.resnet_simclr import ResNetSimCLR
 from models.augmentor import LpAugmentor
+from models.augmentor import LpAugmentorStyleTransfer
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 import torch.distributions as tdist
@@ -44,6 +45,7 @@ class SimCLRAdv(object):
             self.device, config["batch_size"], **config["loss"]
         )
         self.normal_dist = tdist.Normal(torch.Tensor([0.0]), torch.Tensor([1.0]))
+        self.augmentor_type = config["augmentor_type"] if "augmentor_type" in config else "cnn"
 
     def _get_device(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -86,7 +88,12 @@ class SimCLRAdv(object):
         model = ResNetSimCLR(**self.config["model"]).to(self.device)
         model = self._load_pre_trained_weights(model)
 
-        augmentor = LpAugmentor().to(self.device)
+        if self.augmentor_type == "cnn":
+            augmentor = LpAugmentor().to(self.device)
+        elif self.augmentor_type == "style_transfer":
+            augmentor = LpAugmentorStyleTransfer().to(self.device)
+        else:
+            raise ValueError("Unrecognized augmentor type: {}".format(self.augmentor_type))
         # augmentor_optimizer = torch.optim.Adam(augmentor.parameters(), 3e-4)
         # augmentor_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         #     augmentor_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
