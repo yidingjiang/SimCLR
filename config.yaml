@@ -6,9 +6,9 @@ log_every_n_steps: 50
 weight_decay: 10e-6
 fp16_precision: False
 exp_type: icm_adversarial
-num_mechanisms: 5
-device: cuda:1
-simclr_train_interval: 50
+num_mechanisms: 30
+device: cuda
+simclr_train_interval: 5
 
 model:
   out_dim: 256

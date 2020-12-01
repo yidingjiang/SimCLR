@@ -298,10 +298,10 @@ class IcmSimCLRv2(IcmSimCLR):
         total_id_loss = (id_loss_i + id_loss_j) / 2.
 
         val_loss_i = torch.mean(
-            (xis_pred_val - torch.Tensor(xis_true_val).float().to(self.device))**2
+            (xis_pred_val - torch.tensor(xis_true_val).float().to(self.device))**2
         )
         val_loss_j = torch.mean(
-            (xjs_pred_val - torch.Tensor(xjs_true_val).float().to(self.device))**2
+            (xjs_pred_val - torch.tensor(xjs_true_val).float().to(self.device))**2
         )
         total_val_loss = (val_loss_i + val_loss_j) / 2.
 

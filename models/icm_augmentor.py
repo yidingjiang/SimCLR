@@ -99,9 +99,10 @@ class IcmAugmentorv2(nn.Module):
         self.clip = clip
         self.mechanisms = nn.ModuleList()
         for _ in range(num_mech):
-          self.mechanisms.append(Mechanism())
+          self.mechanisms.append(Mechanismv2(device=device))
         self.selected_mechanism = []
         self.device = device
+        self.noise_bound = [-1, 1]
         # self.normal_dist = tdist.Uniform(torch.tensor([-1.]), torch.tensor([1.]))
 
     def forward(self, x):
@@ -120,18 +121,19 @@ class IcmAugmentorv2(nn.Module):
             split = torch.split(out, num_per_mech)
             # val_split = torch.split(torch.tensor(chosen_val).to(self.device), num_per_mech)
             val_split = np.split(chosen_val, self.max_app_parallel)
-            split = [m(s, v) for s, m, v in zip(split, chosen_mech, val_split)]
+            split = [m((s, v)) for s, m, v in zip(split, chosen_mech, val_split)]
             # merge and clamp
             out = torch.cat(split)
-        return out, mech_label, chosen_val
+        return out, {"id": mech_label, "value": chosen_val}
 
 
 class Mechanismv2(nn.Module):
 
-    def __init__(self, p=1, magnitude=0.05):
+    def __init__(self, device="cuda", p=1, magnitude=0.05):
         super(Mechanismv2, self).__init__()
         self.p = p
         self.magnitude = magnitude
+        self.device = device
         self.transform = nn.Sequential(
             nn.Conv2d(4, 64, kernel_size=4, stride=2),
             nn.ReLU(),
@@ -142,12 +144,14 @@ class Mechanismv2(nn.Module):
             nn.ConvTranspose2d(64, 3, kernel_size=6, stride=2),
         )
 
-    def forward(self, x, v):
+    def forward(self, x):
+        x, v = x[0], x[1]
         s = x.size()
-        v = torch.tensor(np.ones([s[0], 1, s[2], s[3]]) * v)
-        x = torch.cat((x, v), 1)
-        h = self.transform(x)
+        v = torch.tensor(np.ones([s[0], 1, s[2], s[3]]) * np.expand_dims(v, [1, 2, 3]), dtype=torch.float).to(self.device)
+        x_cat = torch.cat((x, v), 1)
+        h = self.transform(x_cat)
         norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
+        # print("x", x.size(), "v", v.size(), "norm", norm.size(), "h", h.size())
         out = x + self.magnitude * np.prod(s[1:]) * h.div(norm).detach()
         return torch.clamp(out, 0., 1.)
 
@@ -179,5 +183,5 @@ class Discriminatorv2(nn.Module):
         id_out = F.relu(self.f1(out))
         id_pred = self.f2(id_out)
         val_out = F.relu(self.v1(out))
-        val_pred = self.v2(id_out)
+        val_pred = self.v2(val_out)
         return id_pred, val_pred
