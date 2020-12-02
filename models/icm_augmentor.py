@@ -6,17 +6,36 @@ import torch.nn.functional as F
 import torchvision.models as models
 import torch.distributions as tdist
 
+from models.style_transfer_model import TransformerNet
+
 
 class IcmAugmentor(nn.Module):
-    def __init__(self, num_mech, num_app=1, max_app_parallel=4, clip=True, device="cuda"):
+    def __init__(
+        self,
+        num_mech,
+        augmentor_type="cnn",
+        num_app=1,
+        max_app_parallel=4,
+        clip=True,
+        device="cuda",
+    ):
         super(IcmAugmentor, self).__init__()
         self.num_mech = num_mech
         self.num_app = num_app
         self.max_app_parallel = max_app_parallel
         self.clip = clip
         self.mechanisms = nn.ModuleList()
+
+        self.augmentor_type = augmentor_type
+        if self.augmentor_type == "cnn":
+            self.mechanism_obj = Mechanism
+        elif self.augmentor_type == "style_transfer":
+            self.mechanism_obj = ResNetMechanism
+        else:
+            raise ValueError("Unrecognized mechanism type: {}".format(self.augmentor_type))
+
         for _ in range(num_mech):
-          self.mechanisms.append(Mechanism())
+            self.mechanisms.append(Mechanism())
         self.selected_mechanism = []
         self.device = device
 
@@ -39,35 +58,40 @@ class IcmAugmentor(nn.Module):
 
 
 class Mechanism(nn.Module):
-
     def __init__(self, p=1, magnitude=0.05):
         super(Mechanism, self).__init__()
         self.p = p
         self.magnitude = magnitude
-        self.transform = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 3, kernel_size=6, stride=2),
-        )
+        self.transform = TransformerNet()
 
     def forward(self, x):
         shape = x.size()
         h = self.transform(x)
-        norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
-        out = x + self.magnitude * np.prod(shape[1:]) * h.div(norm).detach()
-        return torch.clamp(out, 0., 1.)
+        norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True).detach()
+        out = x + self.magnitude * np.prod(shape[1:]) * h.div(norm)
+        return torch.clamp(out, 0.0, 1.0)
+
+
+class ResNetMechanism(nn.Module):
+    def __init__(self, p=1, magnitude=0.05):
+        super(ResNetMechanism, self).__init__()
+        self.p = p
+        self.magnitude = magnitude
+        self.transform = TransformerNet
+
+    def forward(self, x):
+        shape = x.size()
+        h = self.transform(x)
+        norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True).detach()
+        out = x + self.magnitude * np.prod(shape[1:]) * h.div(norm)
+        return torch.clamp(out, 0.0, 1.0)
 
 
 class Discriminator(nn.Module):
-
     def __init__(self, num_mech, input_dim=32, p=1, magnitude=0.05):
         super(Discriminator, self).__init__()
         self.num_mech = num_mech
-        self.h_dim = 32 * (input_dim // (2**3))**2
+        self.h_dim = 32 * (input_dim // (2 ** 3)) ** 2
         self.model = nn.Sequential(
             nn.Conv2d(6, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
@@ -88,10 +112,14 @@ class Discriminator(nn.Module):
         out = self.f2(out)
         return out
 
-#============================== Noise version ==============================
+
+# ============================== Noise version ==============================
+
 
 class IcmAugmentorv2(nn.Module):
-    def __init__(self, num_mech, num_app=1, max_app_parallel=4, clip=True, device="cuda"):
+    def __init__(
+        self, num_mech, num_app=1, max_app_parallel=4, clip=True, device="cuda"
+    ):
         super(IcmAugmentorv2, self).__init__()
         self.num_mech = num_mech
         self.num_app = num_app
@@ -99,7 +127,7 @@ class IcmAugmentorv2(nn.Module):
         self.clip = clip
         self.mechanisms = nn.ModuleList()
         for _ in range(num_mech):
-          self.mechanisms.append(Mechanismv2(device=device))
+            self.mechanisms.append(Mechanismv2(device=device))
         self.selected_mechanism = []
         self.device = device
         self.noise_bound = [-1, 1]
@@ -115,7 +143,9 @@ class IcmAugmentorv2(nn.Module):
             # sample which mechanisms to apply and create label
             chosen_idx = np.random.choice(mech_idx, self.max_app_parallel, True)
             chosen_mech = [self.mechanisms[i] for i in chosen_idx]
-            chosen_val = np.random.uniform(self.noise_bound[0], self.noise_bound[1], batch_size)
+            chosen_val = np.random.uniform(
+                self.noise_bound[0], self.noise_bound[1], batch_size
+            )
             mech_label.append(np.concatenate([[i] * num_per_mech for i in chosen_idx]))
             # split and apply
             split = torch.split(out, num_per_mech)
@@ -128,7 +158,6 @@ class IcmAugmentorv2(nn.Module):
 
 
 class Mechanismv2(nn.Module):
-
     def __init__(self, device="cuda", p=1, magnitude=0.05):
         super(Mechanismv2, self).__init__()
         self.p = p
@@ -147,21 +176,23 @@ class Mechanismv2(nn.Module):
     def forward(self, x):
         x, v = x[0], x[1]
         s = x.size()
-        v = torch.tensor(np.ones([s[0], 1, s[2], s[3]]) * np.expand_dims(v, [1, 2, 3]), dtype=torch.float).to(self.device)
+        v = torch.tensor(
+            np.ones([s[0], 1, s[2], s[3]]) * np.expand_dims(v, [1, 2, 3]),
+            dtype=torch.float,
+        ).to(self.device)
         x_cat = torch.cat((x, v), 1)
         h = self.transform(x_cat)
         norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
         # print("x", x.size(), "v", v.size(), "norm", norm.size(), "h", h.size())
         out = x + self.magnitude * np.prod(s[1:]) * h.div(norm).detach()
-        return torch.clamp(out, 0., 1.)
+        return torch.clamp(out, 0.0, 1.0)
 
 
 class Discriminatorv2(nn.Module):
-
     def __init__(self, num_mech, input_dim=32, p=1, magnitude=0.05):
         super(Discriminatorv2, self).__init__()
         self.num_mech = num_mech
-        self.h_dim = 32 * (input_dim // (2**3))**2
+        self.h_dim = 32 * (input_dim // (2 ** 3)) ** 2
         self.model = nn.Sequential(
             nn.Conv2d(6, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),

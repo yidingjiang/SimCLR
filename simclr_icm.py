@@ -100,11 +100,18 @@ class IcmSimCLR(object):
         model = ResNetSimCLR(**self.config["model"]).to(self.device)
         model = self._load_pre_trained_weights(model)
 
-        augmentor = IcmAugmentor(num_mech=self.config["num_mechanisms"]).to(self.device)
+        augmentor = IcmAugmentor(
+            num_mech=self.config["num_mechanisms"],
+            augmentor_type=self.config["augmentor_type"],
+        ).to(self.device)
         augmentor = self._load_pre_trained_weights(augmentor, "augmentor.pth")
 
-        discriminator = Discriminator(num_mech=self.config["num_mechanisms"]).to(self.device)
-        discriminator = self._load_pre_trained_weights(discriminator, "discriminator.pth")
+        discriminator = Discriminator(num_mech=self.config["num_mechanisms"]).to(
+            self.device
+        )
+        discriminator = self._load_pre_trained_weights(
+            discriminator, "discriminator.pth"
+        )
         return model, augmentor, discriminator
 
     def train(self):
@@ -261,19 +268,24 @@ class IcmSimCLR(object):
 
 
 class IcmSimCLRv2(IcmSimCLR):
-
     def __init__(self, dataset, config):
-         super(IcmSimCLRv2, self).__init__(dataset, config)
+        super(IcmSimCLRv2, self).__init__(dataset, config)
 
     def _build_model(self):
         model = ResNetSimCLR(**self.config["model"]).to(self.device)
         model = self._load_pre_trained_weights(model)
 
-        augmentor = IcmAugmentorv2(num_mech=self.config["num_mechanisms"]).to(self.device)
+        augmentor = IcmAugmentorv2(num_mech=self.config["num_mechanisms"]).to(
+            self.device
+        )
         augmentor = self._load_pre_trained_weights(augmentor, "augmentor.pth")
 
-        discriminator = Discriminatorv2(num_mech=self.config["num_mechanisms"]).to(self.device)
-        discriminator = self._load_pre_trained_weights(discriminator, "discriminator.pth")
+        discriminator = Discriminatorv2(num_mech=self.config["num_mechanisms"]).to(
+            self.device
+        )
+        discriminator = self._load_pre_trained_weights(
+            discriminator, "discriminator.pth"
+        )
         return model, augmentor, discriminator
 
     def _disc_step(self, augmentor, discriminator, xis, xjs, n_iter):
@@ -284,10 +296,10 @@ class IcmSimCLRv2(IcmSimCLR):
         xjs, xjs_mech_label = augmentor(xjs)
         xjs_pred_id, xjs_pred_val = discriminator((xjs, xjs_o))
 
-        xis_true_id = np.int32(xis_mech_label['id'][0])
-        xjs_true_id = np.int32(xjs_mech_label['id'][0])
-        xis_true_val = np.float32(xis_mech_label['value'][0])
-        xjs_true_val = np.float32(xjs_mech_label['value'][0])
+        xis_true_id = np.int32(xis_mech_label["id"][0])
+        xjs_true_id = np.int32(xjs_mech_label["id"][0])
+        xis_true_val = np.float32(xis_mech_label["value"][0])
+        xjs_true_val = np.float32(xjs_mech_label["value"][0])
 
         id_loss_i = self.dis_criterion(
             xis_pred_id, torch.Tensor(xis_true_id).long().to(self.device)
@@ -295,17 +307,21 @@ class IcmSimCLRv2(IcmSimCLR):
         id_loss_j = self.dis_criterion(
             xjs_pred_id, torch.Tensor(xjs_true_id).long().to(self.device)
         )
-        total_id_loss = (id_loss_i + id_loss_j) / 2.
+        total_id_loss = (id_loss_i + id_loss_j) / 2.0
 
         val_loss_i = torch.mean(
-            (xis_pred_val - torch.tensor(xis_true_val).float().to(self.device))**2
+            (xis_pred_val - torch.tensor(xis_true_val).float().to(self.device)) ** 2
         )
         val_loss_j = torch.mean(
-            (xjs_pred_val - torch.tensor(xjs_true_val).float().to(self.device))**2
+            (xjs_pred_val - torch.tensor(xjs_true_val).float().to(self.device)) ** 2
         )
-        total_val_loss = (val_loss_i + val_loss_j) / 2.
+        total_val_loss = (val_loss_i + val_loss_j) / 2.0
 
         if n_iter % 100 == 0:
-            print("step{}    id loss: {:6f}    val_loss: {:6f}".format(n_iter, total_id_loss, total_val_loss))
+            print(
+                "step{}    id loss: {:6f}    val_loss: {:6f}".format(
+                    n_iter, total_id_loss, total_val_loss
+                )
+            )
 
         return total_id_loss + total_val_loss
