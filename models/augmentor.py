@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
-from style_transfer_model import ConvLayer
-from style_transfer_model import ResidualBlock
-from style_transfer_model import UpsampleConvLayer
+from models.style_transfer_model import ConvLayer
+from models.style_transfer_model import ResidualBlock
+from models.style_transfer_model import UpsampleConvLayer
 
 
 class LpAugmentor(nn.Module):
@@ -44,13 +44,13 @@ class LpAugmentorStyleTransfer(nn.Module):
         self.conv3 = ConvLayer(64, 128, kernel_size=3, stride=2)
         self.in3 = torch.nn.InstanceNorm2d(128, affine=True)
         # Residual layers
-        self.res1 = ResidualBlock(128)
-        self.res2 = ResidualBlock(128)
-        self.res3 = ResidualBlock(128)
+        self.res1 = ResidualBlock(128+1)
+        self.res2 = ResidualBlock(128+2)
+        self.res3 = ResidualBlock(128+3)
         # self.res4 = ResidualBlock(128)
         # self.res5 = ResidualBlock(128)
         # Upsampling Layers
-        self.deconv1 = UpsampleConvLayer(128, 64, kernel_size=3, stride=1, upsample=2)
+        self.deconv1 = UpsampleConvLayer(131, 64, kernel_size=3, stride=1, upsample=2)
         self.in4 = torch.nn.InstanceNorm2d(64, affine=True)
         self.deconv2 = UpsampleConvLayer(64, 32, kernel_size=3, stride=1, upsample=2)
         self.in5 = torch.nn.InstanceNorm2d(32, affine=True)
@@ -59,7 +59,7 @@ class LpAugmentorStyleTransfer(nn.Module):
         self.relu = torch.nn.ReLU()
 
     def noise_shapes(self, input_dim):
-        return [[1, input_dim - 4, input_dim - 4]] * 3
+        return [[1, input_dim//4, input_dim//4]] * 3
 
     def forward(self, X, noise):
         y = self.relu(self.in1(self.conv1(X)))
@@ -73,4 +73,6 @@ class LpAugmentorStyleTransfer(nn.Module):
         y = self.relu(self.in4(self.deconv1(y)))
         y = self.relu(self.in5(self.deconv2(y)))
         y = self.deconv3(y)
-        return y
+        norm = y.norm(p=1, dim=(1, 2, 3), keepdim=True).detach()
+        out = X + 0.05*96*96*3*y.div(norm)
+        return torch.clamp(out, 0., 1.)

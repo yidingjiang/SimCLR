@@ -143,6 +143,7 @@ class SimCLRAdv(object):
                     loss.backward()
 
                 for p in augmentor.parameters():
+                    # print(p.name)
                     p.grad *= -1.0
 
                 optimizer.step()
