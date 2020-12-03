@@ -325,3 +325,53 @@ class IcmSimCLRv2(IcmSimCLR):
             )
 
         return total_id_loss + total_val_loss
+
+
+class IcmSimCLRv3(IcmSimCLR):
+    def __init__(self, dataset, config):
+        super(IcmSimCLRv3, self).__init__(dataset, config)
+
+    def _build_model(self):
+        model = ResNetSimCLR(**self.config["model"]).to(self.device)
+        model = self._load_pre_trained_weights(model)
+
+        augmentor = IcmAugmentorv3(num_mech=self.config["num_mechanisms"]).to(
+            self.device
+        )
+        augmentor = self._load_pre_trained_weights(augmentor, "augmentor.pth")
+
+        discriminator = Discriminatorv3(num_mech=self.config["num_mechanisms"]).to(
+            self.device
+        )
+        discriminator = self._load_pre_trained_weights(
+            discriminator, "discriminator.pth"
+        )
+        return model, augmentor, discriminator
+
+    def _disc_step(self, augmentor, discriminator, xis, xjs, n_iter):
+        xis_o, xjs_o = xis, xjs
+
+        xis, xis_mech_label = augmentor(xis)
+        xis_pred_id, xis_pred_val = discriminator((xis, xis_o))
+        xjs, xjs_mech_label = augmentor(xjs)
+        xjs_pred_id, xjs_pred_val = discriminator((xjs, xjs_o))
+
+        xis_true_val = np.float32(xis_mech_label["value"][0])
+        xjs_true_val = np.float32(xjs_mech_label["value"][0])
+
+        val_loss_i = torch.mean(
+            (xis_pred_val - torch.tensor(xis_true_val).float().to(self.device)) ** 2
+        )
+        val_loss_j = torch.mean(
+            (xjs_pred_val - torch.tensor(xjs_true_val).float().to(self.device)) ** 2
+        )
+        total_val_loss = (val_loss_i + val_loss_j) / 2.0
+
+        if n_iter % 100 == 0:
+            print(
+                "step{}    val_loss: {:6f}".format(
+                    n_iter, total_val_loss
+                )
+            )
+
+        return total_val_loss

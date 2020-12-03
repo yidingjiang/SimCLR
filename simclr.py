@@ -35,6 +35,21 @@ def _save_config_file(model_checkpoints_folder):
         )
 
 
+# def _get_optimizer(parameters, opt_name):
+#     if opt_name == "sgd":
+#         optimizer = torch.optim.Adam(
+#             list(model.parameters()) + list(augmentor.parameters()),
+#             3e-4,
+#             weight_decay=eval(self.config["weight_decay"]),
+#         )
+
+#         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+#             optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
+#         )
+#     elif opt_name == "adam":
+#         o
+
+
 class SimCLRAdv(object):
     def __init__(self, dataset, config):
         self.config = config

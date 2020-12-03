@@ -7,6 +7,9 @@ import torchvision.models as models
 import torch.distributions as tdist
 
 from models.style_transfer_model import TransformerNet
+from models.style_transfer_model import ConvLayer
+from models.style_transfer_model import ResidualBlock
+from models.style_transfer_model import UpsampleConvLayer
 
 
 class IcmAugmentor(nn.Module):
@@ -117,6 +120,7 @@ class Discriminator(nn.Module):
 
 
 class IcmAugmentorv2(nn.Module):
+
     def __init__(
         self, num_mech, num_app=1, max_app_parallel=4, clip=True, device="cuda"
     ):
@@ -158,6 +162,7 @@ class IcmAugmentorv2(nn.Module):
 
 
 class Mechanismv2(nn.Module):
+
     def __init__(self, device="cuda", p=1, magnitude=0.05):
         super(Mechanismv2, self).__init__()
         self.p = p
@@ -189,6 +194,7 @@ class Mechanismv2(nn.Module):
 
 
 class Discriminatorv2(nn.Module):
+
     def __init__(self, num_mech, input_dim=32, p=1, magnitude=0.05):
         super(Discriminatorv2, self).__init__()
         self.num_mech = num_mech
@@ -216,3 +222,100 @@ class Discriminatorv2(nn.Module):
         val_out = F.relu(self.v1(out))
         val_pred = self.v2(val_out)
         return id_pred, val_pred
+
+
+# ============================== InfoGAN version ==============================
+
+
+class IcmAugmentorv3(nn.Module):
+    def __init__(
+        self, num_mech, num_app=1, max_app_parallel=4, clip=True, device="cuda"
+    ):
+        super(IcmAugmentorv3, self).__init__()
+        self.num_mech = num_mech
+        self.num_app = num_app
+        self.max_app_parallel = max_app_parallel
+        self.clip = clip
+        self.mechanism = Mechanismv3(device=device)
+        self.selected_mechanism = []
+        self.device = device
+        self.noise_bound = [-1, 1]
+
+    def forward(self, x):
+        out = x
+        batch_size = x.size()[0]
+        chosen_val = np.random.uniform(
+            self.noise_bound[0], self.noise_bound[1], [batch_size, self.num_mech]
+        )
+        out = self.mechanism(x, chosen_val)
+        return out, {"value": chosen_val}
+
+
+class Mechanismv3(nn.Module):
+    def __init__(self, num_mech, device="cuda", p=1, magnitude=0.05):
+        super(Mechanismv2, self).__init__()
+        self.p = p
+        self.magnitude = magnitude
+        self.device = device
+        self.num_mech = num_mech
+
+        self.down_conv = nn.Sequential(
+            nn.Conv2d(4, 64, kernel_size=6, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, kernel_size=3, stride=2),
+        )
+        self.up_conv = nn.Sequential(
+            nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 3, kernel_size=6, stride=2),
+        )
+        self.f1 = nn.Linear(self.num_mech, 128)
+        self.f2 = nn.Linear(128, 6 * 6 * 8)
+        self.code_up = nn.Sequential(
+            nn.ConvTranspose2d(8, 64, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 128, kernel_size=3, stride=2)
+        )
+
+    def forward(self, x):
+        x, v = x[0], x[1]
+        s = x.size()
+        v = torch.tensor(v).to(self.device)
+        v = F.relu(self.f1(v))
+        v = F.relu(self.f2(v))
+        v = torch.reshape(v, (s[0], 8, 6, 6))
+        v = F.sigmoid(self.code_up(v))
+        x_down = self.down_conv(x)
+        x_combined = x_down * v
+        h = self.up_conv(x_combined)
+        norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
+        out = x + self.magnitude * np.prod(s[1:]) * h.div(norm).detach()
+        return torch.clamp(out, 0.0, 1.0)
+
+
+class Discriminatorv3(nn.Module):
+    def __init__(self, num_mech, input_dim=32, p=1, magnitude=0.05):
+        super(Discriminatorv2, self).__init__()
+        self.num_mech = num_mech
+        self.h_dim = 32 * (input_dim // (2 ** 3)) ** 2
+        self.model = nn.Sequential(
+            nn.Conv2d(6, 32, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+        )
+        self.flatten = nn.Flatten()
+        self.v1 = nn.Linear(128, 32)
+        self.v2 = nn.Linear(32, self.num_mech)
+
+    def forward(self, x):
+        x_cat = torch.cat([x[0], x[1]], dim=1)
+        out = self.model(x_cat)
+        out = torch.mean(out, (2, 3))  # Global avg
+        val_out = F.relu(self.v1(out))
+        val_pred = self.v2(val_out)
+        return val_pred

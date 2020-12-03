@@ -2,6 +2,7 @@ from simclr import SimCLR
 from simclr import SimCLRAdv
 from simclr_icm import IcmSimCLR
 from simclr_icm import IcmSimCLRv2
+from simclr_icm import IcmSimCLRv3
 import yaml
 from data_aug.dataset_wrapper import DataSetWrapper
 
@@ -17,6 +18,8 @@ def main():
         simclr = IcmSimCLR(dataset, config)
     elif config["exp_type"] == "icm_adversarial_v2":
         simclr = IcmSimCLRv2(dataset, config)
+    elif config["exp_type"] == "icm_adversarial_v3":
+        simclr = IcmSimCLRv3(dataset, config)
     elif config["exp_type"] == "normal":
         simclr = SimCLR(dataset, config)
     else:
