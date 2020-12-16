@@ -8,6 +8,47 @@ from torchvision import datasets
 np.random.seed(0)
 
 
+def get_augmented_dataset(name, transform):
+    if name == "STL":
+        train_dataset = datasets.STL10(
+            "./data",
+            split="train+unlabeled",
+            download=True,
+            transform=SimCLRDataTransform(transform),
+        )
+    elif name == "CIFAR10":
+        train_dataset = datasets.CIFAR10(
+            "./data",
+            download=True,
+            train=True,
+            transform=SimCLRDataTransform(transform),
+        )
+    else:
+        raise ValueError("Unrecognized dataset name: {}".format(name))
+    return train_dataset
+
+
+def get_unaugmented_dataset(name):
+    transform = SimCLRDataTransform(transforms.Compose([transforms.ToTensor()]))
+    if name == "STL":
+        train_dataset = datasets.STL10(
+            "./data", 
+            split="train+unlabeled", 
+            download=True,
+            transform=transform
+        )
+    elif name == "CIFAR10":
+        train_dataset = datasets.CIFAR10(
+            "./data",
+            download=True,
+            train=True,
+            transform=transform
+        )
+    else:
+        raise ValueError("Unrecognized dataset name: {}".format(name))
+    return train_dataset
+
+
 class DataSetWrapper(object):
     def __init__(
         self,
@@ -16,6 +57,7 @@ class DataSetWrapper(object):
         valid_size,
         input_shape,
         s,
+        name,
         use_augmentation=False,
     ):
         self.batch_size = batch_size
@@ -23,18 +65,14 @@ class DataSetWrapper(object):
         self.valid_size = valid_size
         self.s = s
         self.input_shape = eval(input_shape)
+        self.name = name
         self.use_augmentation = use_augmentation
 
     def get_data_loaders(self):
         data_augment = self._get_simclr_pipeline_transform()
 
         if self.use_augmentation:
-            train_dataset = datasets.STL10(
-                "./data",
-                split="train+unlabeled",
-                download=True,
-                transform=SimCLRDataTransform(data_augment),
-            )
+            train_dataset = get_augmented_dataset(self.name, data_augment)
         else:
             train_dataset = datasets.STL10(
                 "./data", split="train+unlabeled", download=True,

@@ -24,12 +24,14 @@ class LpAugmentor(nn.Module):
         return [[3, input_dim, input_dim]] * 4
 
     def forward(self, x, noise):
+        shape = x.size()
+        total_size = shape[1] * shape[2] * shape[3]
         h1 = F.relu(self.l_1(torch.cat((x, noise[0]), 1)))
         h2 = F.relu(self.l_2(torch.cat((h1, noise[1]), 1)))
         h3 = F.relu(self.l_3(torch.cat((h2, noise[2]), 1)))
         h4 = self.l_4(torch.cat((h3, noise[3]), 1))
         norm = h4.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
-        out = x + 0.05*96*96*3*h4.div(norm)
+        out = x + 0.05 * total_size * h4.div(norm)
         return torch.clamp(out, 0., 1.) if self.clip else out
 
 
@@ -63,6 +65,8 @@ class LpAugmentorStyleTransfer(nn.Module):
         return [[1, input_dim//4, input_dim//4]] * 3
 
     def forward(self, X, noise):
+        shape = x.size()
+        total_size = shape[1] * shape[2] * shape[3]
         y = self.relu(self.in1(self.conv1(X)))
         y = self.relu(self.in2(self.conv2(y)))
         y = self.relu(self.in3(self.conv3(y)))
@@ -75,7 +79,7 @@ class LpAugmentorStyleTransfer(nn.Module):
         y = self.relu(self.in5(self.deconv2(y)))
         y = self.deconv3(y)
         norm = y.norm(p=1, dim=(1, 2, 3), keepdim=True).detach()
-        out = X + 0.05*96*96*3*y.div(norm)
+        out = X + 0.05 * total_size * y.div(norm)
         return torch.clamp(out, 0., 1.)
 
 
