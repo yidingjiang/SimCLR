@@ -81,7 +81,7 @@ class LpAugmentorStyleTransfer(nn.Module):
 
 class LpAugmentorSpecNorm(nn.Module):
     def __init__(self, p=1, noise_dim=3):
-        super(LpAugmentor, self).__init__()
+        super(LpAugmentorSpecNorm, self).__init__()
         self.noise_dim = noise_dim
         self.p = p
 

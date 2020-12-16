@@ -1,6 +1,7 @@
 import torch
 from models.resnet_simclr import ResNetSimCLR
 from models.augmentor import LpAugmentor
+from models.augmentor import LpAugmentorSpecNorm
 from models.augmentor import LpAugmentorStyleTransfer
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
