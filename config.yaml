@@ -6,10 +6,11 @@ log_every_n_steps: 50
 weight_decay: 10e-6
 fp16_precision: False
 exp_type: icm_adversarial_v3
-augmentor_type: style_transfer
+augmentor_type: cnn
+normalization_type: spectral
 num_mechanisms: 8
 simclr_train_interval: 1
-optimizer: sgd
+optimizer: adam
 device: cuda:0
 
 

@@ -104,11 +104,17 @@ class SimCLRAdv(object):
         model = self._load_pre_trained_weights(model)
 
         if self.augmentor_type == "cnn":
-            augmentor = LpAugmentor().to(self.device)
+            if self.config["normalization_type"] == "original":
+                augmentor = LpAugmentor().to(self.device)
+            elif self.config["normalization_type"] == "spectral":
+                augmentor = LpAugmentorSpecNorm().to(self.device)
+            else:
+                raise ValueError("Unregonized normalization type: {}".format(self.config["normalization_type"]))
         elif self.augmentor_type == "style_transfer":
             augmentor = LpAugmentorStyleTransfer().to(self.device)
         else:
             raise ValueError("Unrecognized augmentor type: {}".format(self.augmentor_type))
+
         # augmentor_optimizer = torch.optim.Adam(augmentor.parameters(), 3e-4)
         # augmentor_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         #     augmentor_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
