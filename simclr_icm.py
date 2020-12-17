@@ -57,7 +57,46 @@ class IcmSimCLR(object):
         print("Running on:", device)
         return device
 
-    def _step(self, model, augmentor, xis, xjs, n_iter):
+    # def _step(self, model, augmentor, discriminator, xis, xjs, n_iter):
+    #     xis_o, xjs_o = xis, xjs
+
+    #     xis, xis_mech_label = augmentor(xis)
+    #     xjs, xjs_mech_label = augmentor(xjs)
+
+    #     ris, zis = model(xis)  # [N,C]
+    #     rjs, zjs = model(xjs)  # [N,C]
+
+    #     # normalize projection feature vectors
+    #     zis = F.normalize(zis, dim=1)
+    #     zjs = F.normalize(zjs, dim=1)
+
+    #     # contrastive loss
+    #     loss = self.nt_xent_criterion(zis, zjs)
+    #     return loss
+
+    # def _disc_step(self, augmentor, discriminator, xis, xjs, n_iter):
+    #     xis_o, xjs_o = xis, xjs
+    #     xis, xis_mech_label = augmentor(xis)
+    #     xis_prediction = discriminator((xis, xis_o))
+    #     xjs, xjs_mech_label = augmentor(xjs)
+    #     xjs_prediction = discriminator((xjs, xjs_o))
+    #     xis_mech_label, xjs_mech_label = np.int32(xis_mech_label[0]), np.int32(
+    #         xjs_mech_label[0]
+    #     )
+    #     disc_loss_i = self.dis_criterion(
+    #         xis_prediction, torch.Tensor(xis_mech_label).long().to(self.device)
+    #     )
+    #     disc_loss_j = self.dis_criterion(
+    #         xjs_prediction, torch.Tensor(xjs_mech_label).long().to(self.device)
+    #     )
+    #     total_loss = (disc_loss_i + disc_loss_j) / 2.0
+
+    #     if n_iter % 100 == 0:
+    #         print("step{}    D loss: {:6f}".format(n_iter, total_loss))
+
+    #     return total_loss
+
+    def _step(self, model, augmentor, discriminator, xis, xjs, n_iter):
         # shape = augmentor.noise_shapes(eval(self.config["dataset"]["input_shape"])[0])
         xis_o, xjs_o = xis, xjs
 
@@ -72,13 +111,9 @@ class IcmSimCLR(object):
         zjs = F.normalize(zjs, dim=1)
 
         loss = self.nt_xent_criterion(zis, zjs)
-        return loss
 
-    def _disc_step(self, augmentor, discriminator, xis, xjs, n_iter):
-        xis_o, xjs_o = xis, xjs
-        xis, xis_mech_label = augmentor(xis)
+        # discriminator loss
         xis_prediction = discriminator((xis, xis_o))
-        xjs, xjs_mech_label = augmentor(xjs)
         xjs_prediction = discriminator((xjs, xjs_o))
         xis_mech_label, xjs_mech_label = np.int32(xis_mech_label[0]), np.int32(
             xjs_mech_label[0]
@@ -89,12 +124,16 @@ class IcmSimCLR(object):
         disc_loss_j = self.dis_criterion(
             xjs_prediction, torch.Tensor(xjs_mech_label).long().to(self.device)
         )
-        total_loss = (disc_loss_i + disc_loss_j) / 2.0
+        total_disc_loss = (disc_loss_i + disc_loss_j) / 2.0
 
         if n_iter % 100 == 0:
-            print("step{}    D loss: {:6f}".format(n_iter, total_loss))
+            print(
+                "step{}      Simclr loss: {:6f}      D loss: {:6f}".format(
+                    n_iter, loss, total_loss
+                )
+            )
 
-        return total_loss
+        return loss - self.disc_weight * total_disc_loss
 
     def _build_model(self):
         model = ResNetSimCLR(**self.config["model"]).to(self.device)
@@ -126,26 +165,30 @@ class IcmSimCLR(object):
             weight_decay=eval(self.config["weight_decay"]),
         )
 
-        aug_optimizer = torch.optim.Adam(
-            list(augmentor.parameters()),
-            3e-4,
-            weight_decay=eval(self.config["weight_decay"]),
-        )
+        model.train()
+        augmentor.train()
+        discriminator.train()
 
-        disc_optimizer = torch.optim.Adam(
-            list(discriminator.parameters()),
-            3e-4,
-        )
+        # aug_optimizer = torch.optim.Adam(
+        #     list(augmentor.parameters()),
+        #     3e-4,
+        #     weight_decay=eval(self.config["weight_decay"]),
+        # )
+
+        # disc_optimizer = torch.optim.Adam(
+        #     list(discriminator.parameters()),
+        #     3e-4,
+        # )
 
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
         )
-        aug_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            aug_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
-        )
-        disc_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            disc_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
-        )
+        # aug_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     aug_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
+        # )
+        # disc_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     disc_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
+        # )
 
         if apex_support and self.config["fp16_precision"]:
             model, optimizer = amp.initialize(
@@ -167,36 +210,49 @@ class IcmSimCLR(object):
                 xis = xis.to(self.device)
                 xjs = xjs.to(self.device)
 
-                if n_iter % self.config["simclr_train_interval"] == 0:
-                    optimizer.zero_grad()
-
-                    loss = self._step(model, augmentor, xis, xjs, n_iter)
-
-                    if n_iter % self.config["log_every_n_steps"] == 0:
-                        self.writer.add_scalar("train_loss", loss, global_step=n_iter)
-
-                    if apex_support and self.config["fp16_precision"]:
-                        with amp.scale_loss(loss, optimizer) as scaled_loss:
-                            scaled_loss.backward()
-                    else:
-                        loss.backward()
-
-                    optimizer.step()
-
-                # Update augmentor
-                aug_optimizer.zero_grad()
-                loss = -self._step(model, augmentor, xis, xjs, n_iter)
-                loss += self.disc_weight * self._disc_step(
-                    augmentor, discriminator, xis, xjs, n_iter
-                )
+                optimizer.zero_grad()
+                loss = self._step(model, augmentor, discriminator, xis, xjs, n_iter)
                 loss.backward()
-                aug_optimizer.step()
 
-                # Update Discriminator
-                disc_optimizer.zero_grad()
-                loss = self._disc_step(augmentor, discriminator, xis, xjs, n_iter)
-                loss.backward()
-                disc_optimizer.step()
+                # reverse augmentor gradient
+                for p in augmentor.parameters():
+                    p.grad *= -1.0
+                # reverse and rescale discriminator gradient
+                for p in discriminator.parameters():
+                    p.grad *= -1.0 / self.disc_weight
+
+                optimizer.step()
+
+                # if n_iter % self.config["simclr_train_interval"] == 0:
+                #     optimizer.zero_grad()
+
+                #     loss = self._step(model, augmentor, xis, xjs, n_iter)
+
+                #     if n_iter % self.config["log_every_n_steps"] == 0:
+                #         self.writer.add_scalar("train_loss", loss, global_step=n_iter)
+
+                #     if apex_support and self.config["fp16_precision"]:
+                #         with amp.scale_loss(loss, optimizer) as scaled_loss:
+                #             scaled_loss.backward()
+                #     else:
+                #         loss.backward()
+
+                #     optimizer.step()
+
+                # # Update augmentor
+                # aug_optimizer.zero_grad()
+                # loss = -self._step(model, augmentor, xis, xjs, n_iter)
+                # loss += self.disc_weight * self._disc_step(
+                #     augmentor, discriminator, xis, xjs, n_iter
+                # )
+                # loss.backward()
+                # aug_optimizer.step()
+
+                # # Update Discriminator
+                # disc_optimizer.zero_grad()
+                # loss = self._disc_step(augmentor, discriminator, xis, xjs, n_iter)
+                # loss.backward()
+                # disc_optimizer.step()
 
                 n_iter += 1
 
@@ -227,8 +283,8 @@ class IcmSimCLR(object):
             # warmup for the first 10 epochs
             if epoch_counter >= 10:
                 scheduler.step()
-                aug_scheduler.step()
-                disc_scheduler.step()
+                # aug_scheduler.step()
+                # disc_scheduler.step()
 
             self.writer.add_scalar(
                 "cosine_lr_decay", scheduler.get_lr()[0], global_step=n_iter
@@ -368,10 +424,6 @@ class IcmSimCLRv3(IcmSimCLR):
         total_val_loss = (val_loss_i + val_loss_j) / 2.0
 
         if n_iter % 100 == 0:
-            print(
-                "step{}    val_loss: {:6f}".format(
-                    n_iter, total_val_loss
-                )
-            )
+            print("step{}    val_loss: {:6f}".format(n_iter, total_val_loss))
 
         return total_val_loss
