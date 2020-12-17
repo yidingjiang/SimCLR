@@ -69,15 +69,13 @@ class DataSetWrapper(object):
         self.use_augmentation = use_augmentation
 
     def get_data_loaders(self):
+        print("Using dataset: {} with augmentation: {}".format(self.name, self.use_augmentation))
         data_augment = self._get_simclr_pipeline_transform()
 
         if self.use_augmentation:
             train_dataset = get_augmented_dataset(self.name, data_augment)
         else:
-            train_dataset = datasets.STL10(
-                "./data", split="train+unlabeled", download=True,
-                transform = SimCLRDataTransform(transforms.Compose([transforms.ToTensor()]))
-            )
+            train_dataset = get_unaugmented_dataset(self.name)
 
         train_loader, valid_loader = self.get_train_validation_data_loaders(
             train_dataset
