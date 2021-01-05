@@ -129,10 +129,11 @@ class IcmSimCLR(object):
         if n_iter % 100 == 0:
             print(
                 "step{}      Simclr loss: {:6f}      D loss: {:6f}".format(
-                    n_iter, loss, total_loss
+                    n_iter, loss, total_disc_loss
                 )
             )
 
+        #return loss
         return loss - self.disc_weight * total_disc_loss
 
     def _build_model(self):
@@ -160,7 +161,7 @@ class IcmSimCLR(object):
         model, augmentor, discriminator = self._build_model()
 
         optimizer = torch.optim.Adam(
-            list(model.parameters()),
+            list(model.parameters()) + list(augmentor.parameters()) + list(discriminator.parameters()),
             3e-4,
             weight_decay=eval(self.config["weight_decay"]),
         )
@@ -211,12 +212,16 @@ class IcmSimCLR(object):
                 xjs = xjs.to(self.device)
 
                 optimizer.zero_grad()
+
                 loss = self._step(model, augmentor, discriminator, xis, xjs, n_iter)
                 loss.backward()
 
+                for p in model.parameters():
+                    p.grad *= 1.0
                 # reverse augmentor gradient
                 for p in augmentor.parameters():
-                    p.grad *= -1.0
+                    if p.grad is not None:
+                        p.grad *= -1.0
                 # reverse and rescale discriminator gradient
                 for p in discriminator.parameters():
                     p.grad *= -1.0 / self.disc_weight
@@ -258,7 +263,7 @@ class IcmSimCLR(object):
 
             # validate the model if requested
             if epoch_counter % self.config["eval_every_n_epochs"] == 0:
-                valid_loss = self._validate(model, augmentor, valid_loader)
+                valid_loss = self._validate(model, augmentor, discriminator, valid_loader)
                 if valid_loss < best_valid_loss:
                     # save the model weights
                     best_valid_loss = valid_loss
@@ -303,7 +308,7 @@ class IcmSimCLR(object):
 
         return model
 
-    def _validate(self, model, augmentor, valid_loader):
+    def _validate(self, model, augmentor, discriminator, valid_loader):
 
         # validation steps
         with torch.no_grad():
@@ -315,7 +320,7 @@ class IcmSimCLR(object):
                 xis = xis.to(self.device)
                 xjs = xjs.to(self.device)
 
-                loss = self._step(model, augmentor, xis, xjs, counter)
+                loss = self._step(model, augmentor, discriminator, xis, xjs, counter)
                 valid_loss += loss.item()
                 counter += 1
             valid_loss /= counter

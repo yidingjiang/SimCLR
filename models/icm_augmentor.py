@@ -38,7 +38,7 @@ class IcmAugmentor(nn.Module):
             raise ValueError("Unrecognized mechanism type: {}".format(self.augmentor_type))
 
         for _ in range(num_mech):
-            self.mechanisms.append(Mechanism())
+            self.mechanisms.append(self.mechanism_obj())
         self.selected_mechanism = []
         self.device = device
 
@@ -65,7 +65,15 @@ class Mechanism(nn.Module):
         super(Mechanism, self).__init__()
         self.p = p
         self.magnitude = magnitude
-        self.transform = TransformerNet()
+        self.transform = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 64, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 3, kernel_size=6, stride=2),
+        )
 
     def forward(self, x):
         shape = x.size()
@@ -80,7 +88,7 @@ class ResNetMechanism(nn.Module):
         super(ResNetMechanism, self).__init__()
         self.p = p
         self.magnitude = magnitude
-        self.transform = TransformerNet
+        self.transform = TransformerNet()
 
     def forward(self, x):
         shape = x.size()

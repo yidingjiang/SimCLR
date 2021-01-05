@@ -5,7 +5,7 @@ fine_tune_from: None
 log_every_n_steps: 50
 weight_decay: 10e-6
 fp16_precision: False
-exp_type: adversarial
+exp_type: icm_adversarial
 augmentor_type: cnn
 normalization_type: spectral
 num_mechanisms: 8
