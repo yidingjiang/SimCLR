@@ -244,7 +244,16 @@ class IcmAugmentorv3(nn.Module):
         self.num_app = num_app
         self.max_app_parallel = max_app_parallel
         self.clip = clip
-        self.mechanism = Mechanismv3(device=device)
+
+        self.augmentor_type = augmentor_type
+        if self.augmentor_type == "cnn":
+            self.mechanism_obj = Mechanismv3
+        elif self.augmentor_type == "style_transfer":
+            self.mechanism_obj = ResNetMechanismv3
+        else:
+            raise ValueError("Unrecognized mechanism type: {}".format(self.augmentor_type))
+
+        self.mechanism = self.mechanism_obj(self.num_mech, device=device)
         self.selected_mechanism = []
         self.device = device
         self.noise_bound = [-1, 1]
@@ -255,7 +264,7 @@ class IcmAugmentorv3(nn.Module):
         chosen_val = np.random.uniform(
             self.noise_bound[0], self.noise_bound[1], [batch_size, self.num_mech]
         )
-        out = self.mechanism(x, chosen_val)
+        out = self.mechanism((x, chosen_val))
         return out, {"value": chosen_val}
 
 
@@ -296,10 +305,42 @@ class Mechanismv3(nn.Module):
         v = torch.reshape(v, (s[0], 8, 6, 6))
         v = F.sigmoid(self.code_up(v))
         x_down = self.down_conv(x)
-        x_combined = x_down * v
+        x_combined = torch.cat([x_down,v], dim=1)
         h = self.up_conv(x_combined)
         norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
         out = x + self.magnitude * np.prod(s[1:]) * h.div(norm).detach()
+        return torch.clamp(out, 0.0, 1.0)
+
+
+class ResNetMechanismv3(nn.Module):
+    def __init__(self, num_mech, device="cuda", p=1, magnitude=0.05):
+        super(ResNetMechanism, self).__init__()
+        self.p = p
+        self.magnitude = magnitude
+        self.transform = TransformerNet()
+
+        self.f1 = nn.Linear(self.num_mech, 3*8*8)
+        self.code_up = nn.Sequential(
+            nn.ConvTranspose2d(3, 64, kernel_size=3, stride=2),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 3, kernel_size=3, stride=2),
+        )
+        self.upsample = torch.nn.Upsample(scale_factor=3, mode='bilinear')
+
+    def forward(self, x):
+        x, v = x[0], x[1]
+        v = torch.tensor(v).to(self.device)
+        shape = x.size()
+
+        noise = self.f1(v)
+        noise = torch.reshape(v, (shape[0], 3, 8, 8))
+        noise = self.code_up(noise)
+        noise = self.upsample(noise)
+
+        combined = x * torch.sigmoid(noise)
+        h = self.transform(combined)
+        norm = h.norm(p=self.p, dim=(1, 2, 3), keepdim=True).detach()
+        out = x + self.magnitude * np.prod(shape[1:]) * h.div(norm)
         return torch.clamp(out, 0.0, 1.0)
 
 
