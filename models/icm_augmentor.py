@@ -237,7 +237,7 @@ class Discriminatorv2(nn.Module):
 
 class IcmAugmentorv3(nn.Module):
     def __init__(
-        self, num_mech, num_app=1, max_app_parallel=4, clip=True, device="cuda"
+        self, num_mech, augmentor_type="cnn", num_app=1, max_app_parallel=4, clip=True, device="cuda"
     ):
         super(IcmAugmentorv3, self).__init__()
         self.num_mech = num_mech
@@ -264,13 +264,14 @@ class IcmAugmentorv3(nn.Module):
         chosen_val = np.random.uniform(
             self.noise_bound[0], self.noise_bound[1], [batch_size, self.num_mech]
         )
+        chosen_val = np.float32(chosen_val)
         out = self.mechanism((x, chosen_val))
         return out, {"value": chosen_val}
 
 
 class Mechanismv3(nn.Module):
     def __init__(self, num_mech, device="cuda", p=1, magnitude=0.05):
-        super(Mechanismv2, self).__init__()
+        super(Mechanismv3, self).__init__()
         self.p = p
         self.magnitude = magnitude
         self.device = device
@@ -314,18 +315,20 @@ class Mechanismv3(nn.Module):
 
 class ResNetMechanismv3(nn.Module):
     def __init__(self, num_mech, device="cuda", p=1, magnitude=0.05):
-        super(ResNetMechanism, self).__init__()
+        super(ResNetMechanismv3, self).__init__()
         self.p = p
+        self.num_mech = num_mech
         self.magnitude = magnitude
+        self.device = device
         self.transform = TransformerNet()
 
         self.f1 = nn.Linear(self.num_mech, 3*8*8)
         self.code_up = nn.Sequential(
-            nn.ConvTranspose2d(3, 64, kernel_size=3, stride=2),
+            nn.ConvTranspose2d(3, 64, kernel_size=3, stride=1),
             nn.ReLU(),
-            nn.ConvTranspose2d(64, 3, kernel_size=3, stride=2),
+            nn.ConvTranspose2d(64, 3, kernel_size=3, stride=1),
         )
-        self.upsample = torch.nn.Upsample(scale_factor=3, mode='bilinear')
+        self.upsample = torch.nn.Upsample(scale_factor=8, mode='bilinear')
 
     def forward(self, x):
         x, v = x[0], x[1]
@@ -333,8 +336,9 @@ class ResNetMechanismv3(nn.Module):
         shape = x.size()
 
         noise = self.f1(v)
-        noise = torch.reshape(v, (shape[0], 3, 8, 8))
+        noise = torch.reshape(noise, (shape[0], 3, 8, 8))
         noise = self.code_up(noise)
+        # print(noise.size())
         noise = self.upsample(noise)
 
         combined = x * torch.sigmoid(noise)
@@ -346,7 +350,7 @@ class ResNetMechanismv3(nn.Module):
 
 class Discriminatorv3(nn.Module):
     def __init__(self, num_mech, input_dim=32, p=1, magnitude=0.05):
-        super(Discriminatorv2, self).__init__()
+        super(Discriminatorv3, self).__init__()
         self.num_mech = num_mech
         self.h_dim = 32 * (input_dim // (2 ** 3)) ** 2
         self.model = nn.Sequential(

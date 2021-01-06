@@ -4,6 +4,8 @@ from models.icm_augmentor import IcmAugmentor
 from models.icm_augmentor import Discriminator
 from models.icm_augmentor import IcmAugmentorv2
 from models.icm_augmentor import Discriminatorv2
+from models.icm_augmentor import IcmAugmentorv3
+from models.icm_augmentor import Discriminatorv3
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 import torch.distributions as tdist
@@ -96,6 +98,13 @@ class IcmSimCLR(object):
 
     #     return total_loss
 
+    def _disc_loss(xis_pred, xjs_pred, xis_label, xjs_label):
+        xis_label = np.int32(xis_label['value'])
+        xjs_label = np.int32(xjs_label['value'])
+        disc_loss_i = self.dis_criterion(xis_pred, torch.Tensor(xis_label).long().to(self.device))
+        disc_loss_j = self.dis_criterion(xjs_pred, torch.Tensor(xjs_label).long().to(self.device))
+        return (disc_loss_i + disc_loss_j) / 2.0
+
     def _step(self, model, augmentor, discriminator, xis, xjs, n_iter):
         # shape = augmentor.noise_shapes(eval(self.config["dataset"]["input_shape"])[0])
         xis_o, xjs_o = xis, xjs
@@ -115,16 +124,16 @@ class IcmSimCLR(object):
         # discriminator loss
         xis_prediction = discriminator((xis, xis_o))
         xjs_prediction = discriminator((xjs, xjs_o))
-        xis_mech_label, xjs_mech_label = np.int32(xis_mech_label[0]), np.int32(
-            xjs_mech_label[0]
-        )
-        disc_loss_i = self.dis_criterion(
-            xis_prediction, torch.Tensor(xis_mech_label).long().to(self.device)
-        )
-        disc_loss_j = self.dis_criterion(
-            xjs_prediction, torch.Tensor(xjs_mech_label).long().to(self.device)
-        )
-        total_disc_loss = (disc_loss_i + disc_loss_j) / 2.0
+        #xis_mech_label = np.int32(xis_mech_label['value'])
+        #xjs_mech_label = np.int32(xjs_mech_label['value'])
+        #disc_loss_i = self.dis_criterion(
+        #    xis_prediction, torch.Tensor(xis_mech_label).long().to(self.device)
+        #)
+        #disc_loss_j = self.dis_criterion(
+        #    xjs_prediction, torch.Tensor(xjs_mech_label).long().to(self.device)
+        #)
+        #total_disc_loss = (disc_loss_i + disc_loss_j) / 2.0
+        total_disc_loss = self._disc_loss(xis_prediction, xjs_prediction, xis_mech_label, xjs_mech_label)
 
         if n_iter % 100 == 0:
             print(
@@ -396,12 +405,16 @@ class IcmSimCLRv3(IcmSimCLR):
         model = ResNetSimCLR(**self.config["model"]).to(self.device)
         model = self._load_pre_trained_weights(model)
 
-        augmentor = IcmAugmentorv3(num_mech=self.config["num_mechanisms"]).to(
-            self.device
+        augmentor = IcmAugmentorv3(
+                device=self.device,
+                num_mech=self.config["num_mechanisms"],
+                augmentor_type=self.config["augmentor_type"]).to(
+             self.device
         )
         augmentor = self._load_pre_trained_weights(augmentor, "augmentor.pth")
 
-        discriminator = Discriminatorv3(num_mech=self.config["num_mechanisms"]).to(
+        discriminator = Discriminatorv3(
+                num_mech=self.config["num_mechanisms"]).to(
             self.device
         )
         discriminator = self._load_pre_trained_weights(
@@ -409,7 +422,15 @@ class IcmSimCLRv3(IcmSimCLR):
         )
         return model, augmentor, discriminator
 
-    def _disc_step(self, augmentor, discriminator, xis, xjs, n_iter):
+    def _disc_loss(self, xis_pred, xjs_pred, xis_label, xjs_label):
+        xis_true_val = np.float32(xis_label["value"][0])
+        xjs_true_val = np.float32(xjs_label["value"][0])
+
+        val_loss_i = torch.mean((xis_pred - torch.tensor(xis_true_val).float().to(self.device))**2)
+        val_loss_j = torch.mean((xjs_pred - torch.tensor(xjs_true_val).float().to(self.device))**2)
+        return (val_loss_i + val_loss_j) / 2.0
+
+    def _step_dep(self, model, augmentor, discriminator, xis, xjs, n_iter):
         xis_o, xjs_o = xis, xjs
 
         xis, xis_mech_label = augmentor(xis)
