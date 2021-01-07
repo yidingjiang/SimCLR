@@ -50,7 +50,7 @@ class IcmSimCLR(object):
         )
         self.dis_criterion = torch.nn.CrossEntropyLoss()
         self.normal_dist = tdist.Normal(torch.Tensor([0.0]), torch.Tensor([1.0]))
-        self.disc_weight = 0.1
+        self.disc_weight = config["disc_weight"]
 
     def _get_device(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -99,8 +99,8 @@ class IcmSimCLR(object):
     #     return total_loss
 
     def _disc_loss(xis_pred, xjs_pred, xis_label, xjs_label):
-        xis_label = np.int32(xis_label['value'])
-        xjs_label = np.int32(xjs_label['value'])
+        xis_label = np.int32(xis_label["value"])
+        xjs_label = np.int32(xjs_label["value"])
         disc_loss_i = self.dis_criterion(xis_pred, torch.Tensor(xis_label).long().to(self.device))
         disc_loss_j = self.dis_criterion(xjs_pred, torch.Tensor(xjs_label).long().to(self.device))
         return (disc_loss_i + disc_loss_j) / 2.0
@@ -133,7 +133,10 @@ class IcmSimCLR(object):
         #    xjs_prediction, torch.Tensor(xjs_mech_label).long().to(self.device)
         #)
         #total_disc_loss = (disc_loss_i + disc_loss_j) / 2.0
-        total_disc_loss = self._disc_loss(xis_prediction, xjs_prediction, xis_mech_label, xjs_mech_label)
+        if self.disc_weight > 0.0:
+            total_disc_loss = self._disc_loss(xis_prediction, xjs_prediction, xis_mech_label, xjs_mech_label)
+        else:
+            total_disc_loss = 0.0
 
         if n_iter % 100 == 0:
             print(
@@ -232,8 +235,9 @@ class IcmSimCLR(object):
                     if p.grad is not None:
                         p.grad *= -1.0
                 # reverse and rescale discriminator gradient
-                for p in discriminator.parameters():
-                    p.grad *= -1.0 / self.disc_weight
+                if self.disc_weight > 0.0:
+                    for p in discriminator.parameters():
+                        p.grad *= -1.0 / self.disc_weight
 
                 optimizer.step()
 
