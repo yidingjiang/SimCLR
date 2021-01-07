@@ -3,6 +3,7 @@ from models.resnet_simclr import ResNetSimCLR
 from models.augmentor import LpAugmentor
 from models.augmentor import LpAugmentorSpecNorm
 from models.augmentor import LpAugmentorStyleTransfer
+from models.augmentor import LpAugmentorTransformer
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 import torch.distributions as tdist
@@ -113,6 +114,8 @@ class SimCLRAdv(object):
                 raise ValueError("Unregonized normalization type: {}".format(self.config["normalization_type"]))
         elif self.augmentor_type == "style_transfer":
             augmentor = LpAugmentorStyleTransfer().to(self.device)
+        elif self.augmentor_type == "transformer":
+            augmentor = LpAugmentorTransformer().to(self.device)
         else:
             raise ValueError("Unrecognized augmentor type: {}".format(self.augmentor_type))
 
