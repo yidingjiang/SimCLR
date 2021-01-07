@@ -6,6 +6,7 @@ from models.style_transfer_model import ConvLayer
 from models.style_transfer_model import ResidualBlock
 from models.style_transfer_model import UpsampleConvLayer
 from models.conv_layers import SNConv2d
+from models.transformer import ExemplarTransformer
 
 
 class LpAugmentor(nn.Module):
@@ -108,4 +109,39 @@ class LpAugmentorSpecNorm(nn.Module):
         h4 = self.l_4(torch.cat((h3, noise[3]), 1))
         # norm = h4.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
         out = x + 0.01 * h4
+        return torch.clamp(out, 0., 1.)
+
+
+class LpAugmentorTransformer(nn.Module):
+    def __init__(self, p=1, noise_dim=3, num_noise_token=2):
+        super(LpAugmentorTransformer, self).__init__()
+        self.noise_dim = noise_dim
+        self.num_noise_token = num_noise_token
+        self.p = p
+
+        self.noise_to_embedding = nn.Linear(128 * num_noise_token, 128 * num_noise_token)
+        self.transformer = ExemplarTransformer(
+            image_size=96,
+            patch_size=16,
+            dim=128,
+            depth=10,
+            heads=8,
+            mlp_dim=256,
+            dropout = 0.1,
+            emb_dropout = 0.1,
+        )
+        self.conv_proj = ConvLayer(128, 3, kernel_size=3, stride=1)
+
+    def noise_shape(self, input_dim):
+        return [[3, input_dim, input_dim]] * 4
+
+    def forward(self, x, noise):
+        noise = noise[0]
+        shape = noise.size()
+        noise = torch.reshape(noise, [shape[0], -1])[:, :128 * self.num_noise_token]
+        noise = self.noise_to_embedding(noise)
+        noise = torch.reshape(noise, [shape[0], self.self.num_noise_token, 128])
+        y = self.conv_proj(self.transformer(x, noise))
+        norm = y.norm(p=1, dim=(1, 2, 3), keepdim=True).detach()
+        out = x + 0.05 * total_size * y.div(norm)
         return torch.clamp(out, 0., 1.)
