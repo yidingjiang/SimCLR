@@ -221,6 +221,8 @@ class ExemplarTransformer(nn.Module):
         ), "Image dimensions must be divisible by the patch size."
         num_patches = (image_size // patch_size) ** 2
         patch_dim = channels * patch_size ** 2
+        self.patch_dim = patch_dim
+        self.num_patches = num_patches
         assert (
             num_patches > MIN_NUM_PATCHES
         ), f"your number of patches ({num_patches}) is way too small for attention to be effective (at least 16). Try decreasing your patch size"
@@ -230,6 +232,7 @@ class ExemplarTransformer(nn.Module):
         self.num_noise_token = num_noise_token
         self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + num_noise_token, dim))
         self.patch_to_embedding = nn.Linear(patch_dim, dim)
+        self.embedding_to_patch = nn.Linear(dim, patch_dim*6)
         self.dropout = nn.Dropout(emb_dropout)
 
         self.transformer = NoiseTransformer(
@@ -251,6 +254,7 @@ class ExemplarTransformer(nn.Module):
 
         x = self.transformer(x, mask)
         x = x[:, 2:]
+        x = self.embedding_to_patch(x)
 
         # TODO: project back to 3 d
-        return rearrange(x, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", p1=p, p2=p)
+        return rearrange(x, "b (h w) (p1 p2 c) -> b c (h p1) (w p2)", h=int(self.num_patches**0.5), p1=p, p2=p)

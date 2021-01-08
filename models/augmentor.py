@@ -124,23 +124,25 @@ class LpAugmentorTransformer(nn.Module):
             image_size=96,
             patch_size=16,
             dim=128,
-            depth=10,
+            depth=8,
             heads=8,
             mlp_dim=256,
             dropout = 0.1,
             emb_dropout = 0.1,
         )
-        self.conv_proj = ConvLayer(128, 3, kernel_size=3, stride=1)
+        self.conv_proj = ConvLayer(18, 3, kernel_size=3, stride=1)
 
-    def noise_shape(self, input_dim):
+    def noise_shapes(self, input_dim):
         return [[3, input_dim, input_dim]] * 4
 
     def forward(self, x, noise):
+        shape = x.size()
+        total_size = shape[1] * shape[2] * shape[3]
         noise = noise[0]
         shape = noise.size()
         noise = torch.reshape(noise, [shape[0], -1])[:, :128 * self.num_noise_token]
         noise = self.noise_to_embedding(noise)
-        noise = torch.reshape(noise, [shape[0], self.self.num_noise_token, 128])
+        noise = torch.reshape(noise, [shape[0], self.num_noise_token, 128])
         y = self.conv_proj(self.transformer(x, noise))
         norm = y.norm(p=1, dim=(1, 2, 3), keepdim=True).detach()
         out = x + 0.05 * total_size * y.div(norm)
