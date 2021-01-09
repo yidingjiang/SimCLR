@@ -232,7 +232,7 @@ class ExemplarTransformer(nn.Module):
         self.num_noise_token = num_noise_token
         self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + num_noise_token, dim))
         self.patch_to_embedding = nn.Linear(patch_dim, dim)
-        self.embedding_to_patch = nn.Linear(dim, patch_dim*6)
+        self.embedding_to_patch = nn.Linear(dim, patch_dim)
         self.dropout = nn.Dropout(emb_dropout)
 
         self.transformer = NoiseTransformer(
