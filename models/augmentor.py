@@ -132,28 +132,38 @@ class LpAugmentorTransformer(nn.Module):
             image_size=48,
             patch_size=6,
             dim=128,
-            depth=10,
+            depth=8,
             heads=8,
             mlp_dim=256,
             dropout = 0.1,
             emb_dropout = 0.05,
-            channel=16,
+            channels=16,
         )
         # self.conv_proj = ConvLayer(18, 3, kernel_size=3, stride=1)
+        #self.conv_up = nn.Sequential(
+        #    UpsampleConvLayer(16, 128, kernel_size=3, stride=1, upsample=2),
+        #    torch.nn.InstanceNorm2d(128, affine=True),
+        #    torch.nn.ReLU(),
+        #    UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2),
+        #    torch.nn.InstanceNorm2d(128, affine=True),
+        #    torch.nn.ReLU(),
+        #    ConvLayer(128, 3, kernel_size=3, stride=1),
+        #)
         self.conv_up = nn.Sequential(
-            UpsampleConvLayer(16, 128, kernel_size=3, stride=1, upsample=2)
-            torch.nn.InstanceNorm2d(128, affine=True),
+            UpsampleConvLayer(16, 64, kernel_size=3, stride=1, upsample=2),
+            #torch.nn.InstanceNorm2d(128, affine=True),
             torch.nn.ReLU(),
-            UpsampleConvLayer(128, 128, kernel_size=3, stride=1, upsample=2)
-            torch.nn.InstanceNorm2d(128, affine=True),
+            UpsampleConvLayer(64, 64, kernel_size=3, stride=1, upsample=1),
+            #torch.nn.InstanceNorm2d(128, affine=True),
             torch.nn.ReLU(),
-            ConvLayer(128, 3, kernel_size=3, stride=1),
+            ConvLayer(64, 3, kernel_size=1, stride=1),
         )
 
     def noise_shapes(self, input_dim):
         return [[3, input_dim, input_dim]] * 4
 
     def forward(self, x, noise):
+        x_o = x
         x = self.conv_down(x)
         shape = x.size()
         total_size = shape[1] * shape[2] * shape[3]
@@ -163,7 +173,8 @@ class LpAugmentorTransformer(nn.Module):
         noise = self.noise_to_embedding(noise)
         noise = torch.reshape(noise, [shape[0], self.num_noise_token, 128])
         # y = self.conv_proj(self.transformer(x, noise))
-        y = self.conv_up(self.transformer(x, noise))
+        y = self.transformer(x, noise)
+        y = self.conv_up(y)
         norm = y.norm(p=1, dim=(1, 2, 3), keepdim=True).detach()
-        out = x + 0.05 * total_size * y.div(norm)
+        out = x_o + 0.05 * total_size * y.div(norm)
         return torch.clamp(out, 0., 1.)
