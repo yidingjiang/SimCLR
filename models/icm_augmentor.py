@@ -348,25 +348,61 @@ class ResNetMechanismv3(nn.Module):
         return torch.clamp(out, 0.0, 1.0)
 
 
+# class Discriminatorv3(nn.Module):
+#     def __init__(self, num_mech, input_dim=32, p=1, magnitude=0.05):
+#         super(Discriminatorv3, self).__init__()
+#         self.num_mech = num_mech
+#         self.h_dim = 32 * (input_dim // (2 ** 3)) ** 2
+#         self.model = nn.Sequential(
+#             nn.Conv2d(6, 32, kernel_size=3, stride=2, padding=1),
+#             nn.ReLU(),
+#             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+#             nn.ReLU(),
+#             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+#             nn.ReLU(),
+#         )
+#         self.flatten = nn.Flatten()
+#         self.v1 = nn.Linear(128, 128)
+#         self.v2 = nn.Linear(128, self.num_mech)
+
+#     def forward(self, x):
+#         x_cat = torch.cat([x[0], x[1]], dim=1)
+#         out = self.model(x_cat)
+#         out = torch.mean(out, (2, 3))  # Global avg
+#         val_out = F.relu(self.v1(out))
+#         val_pred = self.v2(val_out)
+#         return val_pred
+
+
 class Discriminatorv3(nn.Module):
     def __init__(self, num_mech, input_dim=32, p=1, magnitude=0.05):
         super(Discriminatorv3, self).__init__()
         self.num_mech = num_mech
         self.h_dim = 32 * (input_dim // (2 ** 3)) ** 2
+        self.original_preprocess = nn.Sequential(
+            nn.Conv2d(6, 32, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+        )
         self.model = nn.Sequential(
             nn.Conv2d(6, 32, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(64, 256, kernel_size=3, stride=2, padding=1),
             nn.ReLU(),
         )
         self.flatten = nn.Flatten()
-        self.v1 = nn.Linear(128, 32)
-        self.v2 = nn.Linear(32, self.num_mech)
+        self.v1 = nn.Linear(256, 256)
+        self.v2 = nn.Linear(256, self.num_mech)
 
     def forward(self, x):
-        x_cat = torch.cat([x[0], x[1]], dim=1)
+        # second one is the original
+        x_o_proj = self.original_preprocess(x[1])
+        x_cat = torch.cat([x[0], x_o_proj], dim=1)
         out = self.model(x_cat)
         out = torch.mean(out, (2, 3))  # Global avg
         val_out = F.relu(self.v1(out))

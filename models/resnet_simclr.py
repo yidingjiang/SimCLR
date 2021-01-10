@@ -13,7 +13,10 @@ class ResNetSimCLR(nn.Module):
         resnet = self._get_basemodel(base_model)
         num_ftrs = resnet.fc.in_features
 
-        self.features = nn.Sequential(*list(resnet.children())[:-1])
+        resnet_children = list(resnet.children())[:-1]
+        self.features_1 = nn.Sequential(*resnet_children[:len(resnet_children)//2])
+        self.features_2 = nn.Sequential(*resnet_children[len(resnet_children)//2:])
+        # self.features = nn.Sequential(*list(resnet.children())[:-1])
 
         # projection MLP
         self.l1 = nn.Linear(num_ftrs, num_ftrs)
@@ -27,11 +30,21 @@ class ResNetSimCLR(nn.Module):
         except:
             raise ("Invalid model name. Check the config file and pass one of: resnet18 or resnet50")
 
+    # def forward(self, x):
+    #     h = self.features(x)
+    #     h = h.squeeze()
+
+    #     x = self.l1(h)
+    #     x = F.relu(x)
+    #     x = self.l2(x)
+    #     return h, x
+
     def forward(self, x):
-        h = self.features(x)
-        h = h.squeeze()
+        h1 = self.features_1(x)
+        h2 = self.features_2(h1)
+        h = h2.squeeze()
 
         x = self.l1(h)
         x = F.relu(x)
         x = self.l2(x)
-        return h, x
+        return h1, x
