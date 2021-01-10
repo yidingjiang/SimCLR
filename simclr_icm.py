@@ -59,45 +59,6 @@ class IcmSimCLR(object):
         print("Running on:", device)
         return device
 
-    # def _step(self, model, augmentor, discriminator, xis, xjs, n_iter):
-    #     xis_o, xjs_o = xis, xjs
-
-    #     xis, xis_mech_label = augmentor(xis)
-    #     xjs, xjs_mech_label = augmentor(xjs)
-
-    #     ris, zis = model(xis)  # [N,C]
-    #     rjs, zjs = model(xjs)  # [N,C]
-
-    #     # normalize projection feature vectors
-    #     zis = F.normalize(zis, dim=1)
-    #     zjs = F.normalize(zjs, dim=1)
-
-    #     # contrastive loss
-    #     loss = self.nt_xent_criterion(zis, zjs)
-    #     return loss
-
-    # def _disc_step(self, augmentor, discriminator, xis, xjs, n_iter):
-    #     xis_o, xjs_o = xis, xjs
-    #     xis, xis_mech_label = augmentor(xis)
-    #     xis_prediction = discriminator((xis, xis_o))
-    #     xjs, xjs_mech_label = augmentor(xjs)
-    #     xjs_prediction = discriminator((xjs, xjs_o))
-    #     xis_mech_label, xjs_mech_label = np.int32(xis_mech_label[0]), np.int32(
-    #         xjs_mech_label[0]
-    #     )
-    #     disc_loss_i = self.dis_criterion(
-    #         xis_prediction, torch.Tensor(xis_mech_label).long().to(self.device)
-    #     )
-    #     disc_loss_j = self.dis_criterion(
-    #         xjs_prediction, torch.Tensor(xjs_mech_label).long().to(self.device)
-    #     )
-    #     total_loss = (disc_loss_i + disc_loss_j) / 2.0
-
-    #     if n_iter % 100 == 0:
-    #         print("step{}    D loss: {:6f}".format(n_iter, total_loss))
-
-    #     return total_loss
-
     def _disc_loss(xis_pred, xjs_pred, xis_label, xjs_label):
         xis_label = np.int32(xis_label["value"])
         xjs_label = np.int32(xjs_label["value"])
@@ -240,37 +201,6 @@ class IcmSimCLR(object):
                         p.grad *= -1.0 / self.disc_weight
 
                 optimizer.step()
-
-                # if n_iter % self.config["simclr_train_interval"] == 0:
-                #     optimizer.zero_grad()
-
-                #     loss = self._step(model, augmentor, xis, xjs, n_iter)
-
-                #     if n_iter % self.config["log_every_n_steps"] == 0:
-                #         self.writer.add_scalar("train_loss", loss, global_step=n_iter)
-
-                #     if apex_support and self.config["fp16_precision"]:
-                #         with amp.scale_loss(loss, optimizer) as scaled_loss:
-                #             scaled_loss.backward()
-                #     else:
-                #         loss.backward()
-
-                #     optimizer.step()
-
-                # # Update augmentor
-                # aug_optimizer.zero_grad()
-                # loss = -self._step(model, augmentor, xis, xjs, n_iter)
-                # loss += self.disc_weight * self._disc_step(
-                #     augmentor, discriminator, xis, xjs, n_iter
-                # )
-                # loss.backward()
-                # aug_optimizer.step()
-
-                # # Update Discriminator
-                # disc_optimizer.zero_grad()
-                # loss = self._disc_step(augmentor, discriminator, xis, xjs, n_iter)
-                # loss.backward()
-                # disc_optimizer.step()
 
                 n_iter += 1
 
