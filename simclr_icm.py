@@ -83,8 +83,10 @@ class IcmSimCLR(object):
         loss = self.nt_xent_criterion(zis, zjs)
 
         # discriminator loss
-        xis_prediction = discriminator((xis, xis_o))
-        xjs_prediction = discriminator((xjs, xjs_o))
+        #xis_prediction = discriminator((xis, xis_o))
+        #xjs_prediction = discriminator((xjs, xjs_o))
+        xis_prediction = discriminator((ris, xis_o))
+        xjs_prediction = discriminator((rjs, xjs_o))
         #xis_mech_label = np.int32(xis_mech_label['value'])
         #xjs_mech_label = np.int32(xjs_mech_label['value'])
         #disc_loss_i = self.dis_criterion(
