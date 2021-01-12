@@ -5,9 +5,11 @@ fine_tune_from: None
 log_every_n_steps: 50
 weight_decay: 10e-6
 fp16_precision: False
-exp_type: icm_adversarial_v3
+exp_type: adversarial
 augmentor_type: style_transfer
 normalization_type: spectral
+augmentor_loss_type: hinge
+augmentor_clip_output: False
 num_mechanisms: 8
 disc_weight: 0.1
 simclr_train_interval: 1
