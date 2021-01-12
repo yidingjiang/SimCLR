@@ -37,21 +37,6 @@ def _save_config_file(model_checkpoints_folder):
         )
 
 
-# def _get_optimizer(parameters, opt_name):
-#     if opt_name == "sgd":
-#         optimizer = torch.optim.Adam(
-#             list(model.parameters()) + list(augmentor.parameters()),
-#             3e-4,
-#             weight_decay=eval(self.config["weight_decay"]),
-#         )
-
-#         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-#             optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
-#         )
-#     elif opt_name == "adam":
-#         o
-
-
 class SimCLRAdv(object):
     def __init__(self, dataset, config):
         self.config = config
@@ -62,7 +47,14 @@ class SimCLRAdv(object):
             self.device, config["batch_size"], **config["loss"]
         )
         self.normal_dist = tdist.Normal(torch.Tensor([0.0]), torch.Tensor([1.0]))
-        self.augmentor_type = config["augmentor_type"] if "augmentor_type" in config else "cnn"
+        self.augmentor_type = (
+            config["augmentor_type"] if "augmentor_type" in config else "cnn"
+        )
+        self.augmentor_loss_type = (
+            config["augmentor_loss_type"]
+            if "augmentor_loss_type" in config
+            else "linear"
+        )
 
     def _get_device(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -107,29 +99,38 @@ class SimCLRAdv(object):
 
         if self.augmentor_type == "cnn":
             if self.config["normalization_type"] == "original":
-                augmentor = LpAugmentor().to(self.device)
+                augmentor = LpAugmentor(clip=self.config["augmentor_clip_output"])
+                augmentor.to(self.device)
             elif self.config["normalization_type"] == "spectral":
-                augmentor = LpAugmentorSpecNorm().to(self.device)
+                augmentor = LpAugmentorSpecNorm(clip=self.config["augmentor_clip_output"])
+                augmentor.to(self.device)
             else:
-                raise ValueError("Unregonized normalization type: {}".format(self.config["normalization_type"]))
+                raise ValueError(
+                    "Unregonized normalization type: {}".format(
+                        self.config["normalization_type"]
+                    )
+                )
         elif self.augmentor_type == "style_transfer":
-            augmentor = LpAugmentorStyleTransfer().to(self.device)
+            augmentor = LpAugmentorStyleTransfer(clip=self.config["augmentor_clip_output"])
+            augmentor.to(self.device)
         elif self.augmentor_type == "transformer":
-            augmentor = LpAugmentorTransformer().to(self.device)
+            augmentor = LpAugmentorTransformer(clip=self.config["augmentor_clip_output"])
+            augmentor.to(self.device)
         else:
-            raise ValueError("Unrecognized augmentor type: {}".format(self.augmentor_type))
+            raise ValueError(
+                "Unrecognized augmentor type: {}".format(self.augmentor_type)
+            )
 
-        # augmentor_optimizer = torch.optim.Adam(augmentor.parameters(), 3e-4)
-        # augmentor_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        #     augmentor_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
-        # )
+        augmentor_optimizer = torch.optim.Adam(augmentor.parameters(), 3e-4)
+        augmentor_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            augmentor_optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
+        )
 
         optimizer = torch.optim.Adam(
-            list(model.parameters()) + list(augmentor.parameters()),
+            list(model.parameters()),
             3e-4,
             weight_decay=eval(self.config["weight_decay"]),
         )
-
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1
         )
@@ -167,17 +168,19 @@ class SimCLRAdv(object):
                 else:
                     loss.backward()
 
-                for p in augmentor.parameters():
-                    # print(p.name)
-                    p.grad *= -1.0
-
+                # for p in augmentor.parameters():
+                #     # print(p.name)
+                #     p.grad *= -1.0
                 optimizer.step()
 
                 # Update augmentor
-                # augmentor_optimizer.zero_grad()
-                # loss = -self._adv_step(model, augmentor, xis, xjs, n_iter)
-                # loss.backward()
-                # augmentor_optimizer.step()
+                augmentor_optimizer.zero_grad()
+                loss = self._adv_step(model, augmentor, xis, xjs, n_iter)
+                if self.augmentor_loss_type == "hinge":
+                    loss = torch.clamp(loss, 0.0, 5.0)
+                loss *= -1.0
+                loss.backward()
+                augmentor_optimizer.step()
 
                 n_iter += 1
 
@@ -200,6 +203,8 @@ class SimCLRAdv(object):
             # warmup for the first 10 epochs
             if epoch_counter >= 10:
                 scheduler.step()
+                augmentor_scheduler.step()
+
             self.writer.add_scalar(
                 "cosine_lr_decay", scheduler.get_lr()[0], global_step=n_iter
             )

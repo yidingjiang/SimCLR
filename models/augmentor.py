@@ -38,8 +38,9 @@ class LpAugmentor(nn.Module):
 
 class LpAugmentorStyleTransfer(nn.Module):
 
-    def __init__(self):
+    def __init__(self, clip=True):
         super(LpAugmentorStyleTransfer, self).__init__()
+        self.clip = clip
         # Initial convolution layers
         self.conv1 = ConvLayer(3, 32, kernel_size=9, stride=1)
         self.in1 = torch.nn.InstanceNorm2d(32, affine=True)
@@ -81,14 +82,15 @@ class LpAugmentorStyleTransfer(nn.Module):
         y = self.deconv3(y)
         norm = y.norm(p=1, dim=(1, 2, 3), keepdim=True).detach()
         out = X + 0.05 * total_size * y.div(norm)
-        return torch.clamp(out, 0., 1.)
+        return torch.clamp(out, 0., 1.) if self.clip else out
 
 
 class LpAugmentorSpecNorm(nn.Module):
-    def __init__(self, p=1, noise_dim=3):
+    def __init__(self, p=1, noise_dim=3, clip=False):
         super(LpAugmentorSpecNorm, self).__init__()
         self.noise_dim = noise_dim
         self.p = p
+        self.clip = clip
 
         # self.l_1 = nn.Conv2d(self.noise_dim + 3, 64, 3, padding=1)
         # self.l_2 = nn.Conv2d(self.noise_dim + 64, 64, 3, padding=1)
@@ -109,7 +111,7 @@ class LpAugmentorSpecNorm(nn.Module):
         h4 = self.l_4(torch.cat((h3, noise[3]), 1))
         # norm = h4.norm(p=self.p, dim=(1, 2, 3), keepdim=True)
         out = x + 0.01 * h4
-        return torch.clamp(out, 0., 1.)
+        return torch.clamp(out, 0., 1.) if self.clip else out
 
 
 class LpAugmentorTransformer(nn.Module):
