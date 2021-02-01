@@ -14,7 +14,7 @@ num_mechanisms: 8
 disc_weight: 0.1
 simclr_train_interval: 1
 optimizer: adam
-device: cuda:6
+device: cuda:8
 
 
 model:

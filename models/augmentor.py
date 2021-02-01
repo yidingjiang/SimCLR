@@ -67,7 +67,7 @@ class LpAugmentorStyleTransfer(nn.Module):
         return [[1, input_dim//4, input_dim//4]] * 3
 
     def forward(self, X, noise):
-        shape = x.size()
+        shape = X.size()
         total_size = shape[1] * shape[2] * shape[3]
         y = self.relu(self.in1(self.conv1(X)))
         y = self.relu(self.in2(self.conv2(y)))

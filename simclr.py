@@ -177,7 +177,7 @@ class SimCLRAdv(object):
                 augmentor_optimizer.zero_grad()
                 loss = self._adv_step(model, augmentor, xis, xjs, n_iter)
                 if self.augmentor_loss_type == "hinge":
-                    loss = torch.clamp(loss, 0.0, 5.0)
+                    loss = torch.clamp(loss, 0.0, 5.4)
                 loss *= -1.0
                 loss.backward()
                 augmentor_optimizer.step()
